@@ -1,19 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FileText, Plus, X, RefreshCw, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette } from 'lucide-react';
+import { Plus, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette, Download } from 'lucide-react';
 
-// NOTE: External Libraries injected dynamically via CDN
-const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-const PDFJS_WORKER_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+// NOTE: External Libraries injected dynamically via CDN (Only Export libs needed now)
 const HTML2CANVAS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
 const JSPDF_CDN = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
 
 // --- Configuration ---
-const STOP_WORDS = new Set(["的","了","在","是","和","就","都","而","及","与","着","或","一个","没有","我们","你们","他们","它","将","为","之","对","不","把","去","但","其","以","从","更","很","也","还","来","做","上","下","中","让","被","给","到","等","比如","例如","虽然","因为","所以","如果","但是","以及","对于","关于","按照","为了","通过","这些","那些","它们","这个","那个","这种","那种","可以说","如图","所示","本文","部分","主要","一种","可以","具有","通常","其中","情况","方面","非常","需要","能够","使得","结果","表明","数据","方法","存在","不同","问题","文章","the","and","of","to","a","in","is","that","for","it","as","was","with","on","by","be","の","に","は","を","が","で","と","も","から","まで","より","へ","や","か","ね","よ","ある","いる","する","なる","れる","られる","ない","たい","ます","です","だ","た","て","こと","もの","ため","よう","わけ","ところ","さん","様","私","僕","彼","彼女","それ","これ","あれ","しかし","また","そして","さらに","つまり","したがって","あるいは","または","なお","ただ","および","よる","研究","分析","論文","本稿","考察","結果","明らか","考え","行う","用いる","述べる","示す","場合","影響","問題","必要","重要","可能","利用","使用","比較","検討","報告","方法","データ","において","について","に対して","に関して","による","によって","として","における","対する","関する"]);
-
-const KNOWN_VERBS = new Set(["観光","旅行","訪問","滞在","宿泊","移動","到着","出発","散策","散歩","周遊","見学","鑑賞","体験","参加","交流","接触","協力","共有","相談","質問","回答","説明","案内","会話","議論","楽しむ","遊ぶ","触れる","聞く","話す","会う","知る","購買","消費","買い物","食事","飲食","喫食","休憩","予約","支払い","購入","注文","食べる","飲む","買う","選ぶ","探す","待つ","並ぶ","撮る","書く","読む","見る","感知","認識","理解","学習","記憶","想起","思考","判断","選択","決定","計画","意図","感じる","思う","考える","迷う","驚く","喜ぶ","怒る","困る","期待","満足","观光","游览","参观","访问","到达","离开","进入","停留","行走","漫步","移动","前往","出发","返回","经过","穿越","驻足","集合","解散","住宿","露营","参加","参与","加入","体验","互动","交流","沟通","分享","协助","合作","接触","咨询","询问","回答","解释","说明","介绍","讨论","争论","协商","求助","引导","感知","观察","观看","注视","聆听","听说","注意","发现","寻找","搜索","识别","理解","学习","记忆","回忆","思考","判断","选择","决定","计划","打算","放弃","喜爱","厌恶","抱怨","赞赏","期待","担心","享受","感受","购买","消费","支付","预订","排队","等待","使用","操作","点击","浏览","拍摄","记录","填写","阅读","书写","携带","丢弃","整理","休息","用餐","饮食","品尝"]);
-
-const KNOWN_ADJS = new Set(["満足","不満","快適","不快","便利","不便","安全","危険","幸福","不安","楽しい","嬉しい","面白い","つまらない","美しい","綺麗","汚い","すごい","素晴らしい","高い","安い","多い","少ない","良い","悪い","好き","嫌い","混雑","静寂","静か","賑やか","清潔","広大","狭い","新しい","古い","複雑","簡単","容易","伝統的","現代的","文化的","自然的","人工的","積極的","消極的","具体的","满意","失望","舒适","愉快","有趣","无聊","丰富","单调","新奇","独特","典型","方便","便捷","困難","复杂","简单","安全","危险","昂贵","便宜","拥挤","嘈杂","安静","整洁","脏乱","开放","封闭","现代","传统","自然","人工","动态","静态","稳定","波动","频繁","偶尔","持续","短暂","active","passive","positive","negative","satisfied","crowded","convenient"]);
-
 const POS_TYPES = {
   NOUN: { id: 'noun', label: '名词', color: 'bg-yellow-300', borderColor: 'border-yellow-400', strokeColor: 'stroke-yellow-300', gradientText: 'text-yellow-300' }, 
   VERB: { id: 'verb', label: '动作', color: 'bg-green-300', borderColor: 'border-green-400', strokeColor: 'stroke-green-300', gradientText: 'text-green-300' }, 
@@ -22,17 +14,6 @@ const POS_TYPES = {
   PURPLE: { id: 'purple', label: '紫色', color: 'bg-gradient-to-br from-purple-300 to-violet-300', borderColor: 'border-purple-400', strokeColor: 'stroke-purple-400', gradientText: 'text-purple-400' },
   ORANGE: { id: 'orange', label: '橙色', color: 'bg-gradient-to-br from-orange-300 to-red-300', borderColor: 'border-orange-400', strokeColor: 'stroke-orange-400', gradientText: 'text-orange-400' },
   MEMO: { id: 'memo', label: '备注', color: 'bg-white/60 backdrop-blur-md shadow-sm', borderColor: 'border-slate-300', strokeColor: 'stroke-slate-200', gradientText: 'text-slate-200' }, 
-};
-
-const guessPOS = (word) => {
-  if (KNOWN_VERBS.has(word)) return 'verb';
-  if (KNOWN_ADJS.has(word)) return 'adj';
-  if (word.endsWith('化') || word.endsWith('する')) return 'verb';
-  if (word.endsWith('的') || word.endsWith('性') || word.endsWith('感') || word.endsWith('さ') || word.endsWith('しい') || word.endsWith('ない')) return 'adj';
-  if (/ing$/.test(word)) return 'verb'; 
-  if (/ed$/.test(word)) return 'adj';
-  if (word.endsWith('度')) return 'adj';
-  return 'noun'; 
 };
 
 const getNoteStyle = (text, type) => {
@@ -64,6 +45,9 @@ const getCurvePoints = (from, to, offset = {x: 0, y: 0}) => {
     if (!from || !to) return { path: '', labelX: 0, labelY: 0 };
     const midX = (from.x + to.x) / 2;
     const midY = (from.y + to.y) / 2;
+    // Check for NaN
+    if (isNaN(midX) || isNaN(midY)) return { path: '', labelX: 0, labelY: 0 };
+
     const cpX = midX + offset.x;
     const cpY = midY + offset.y;
     const labelX = midX + 0.5 * offset.x;
@@ -90,38 +74,6 @@ const isPointInPolygon = (point, vs) => {
     return inside;
 };
 
-const smartExtractKeywords = (text, limit = 30) => {
-  const freqMap = {};
-  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
-    const segmenter = new Intl.Segmenter(['ja-JP', 'zh-CN'], { granularity: 'word' });
-    const segments = segmenter.segment(text);
-    for (const { segment, isWordLike } of segments) { if (isWordLike) processWord(segment, freqMap); }
-  } else {
-    const words = text.split(/[^\w\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+/);
-    words.forEach(word => processWord(word, freqMap));
-  }
-  return Object.entries(freqMap).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([text, count], index) => {
-      const typeKey = guessPOS(text);
-      const posConfig = POS_TYPES[typeKey.toUpperCase()] || POS_TYPES.NOUN;
-      return { id: `word-${index}-${Date.now()}`, text: String(text), count, type: typeKey, color: posConfig.color, borderColor: posConfig.borderColor, strokeColor: posConfig.strokeColor, gradientText: posConfig.gradientText, x: 0, y: 0, groupId: null };
-    });
-};
-
-const processWord = (rawWord, freqMap) => {
-  let word = rawWord.trim();
-  if (/^[a-zA-Z]+$/.test(word)) word = word.toLowerCase();
-  if (STOP_WORDS.has(word)) return;
-  const isHiraganaOnly = /^[\u3040-\u309f]+$/.test(word);
-  if (isHiraganaOnly && !KNOWN_VERBS.has(word) && !KNOWN_ADJS.has(word)) return;
-  const isSingleKanji = /^[\u4e00-\u9fa5]$/.test(word);
-  if (isSingleKanji) return;
-  const isKatakanaOnly = /^[\u30a0-\u30ff]+$/.test(word);
-  if (isKatakanaOnly && word.length < 2) return;
-  if (/^[a-z]+$/.test(word) && word.length < 3) return;
-  if (/^\d+(\.\d+)?$/.test(word)) return; 
-  freqMap[word] = (freqMap[word] || 0) + 1;
-};
-
 // --- Sub Components ---
 
 const ColorPicker = ({ onChange, currentType }) => (
@@ -145,16 +97,13 @@ const GooeyFilters = () => (
 );
 
 const BlobBackground = ({ item }) => {
-    // Only render blob background for NON-MEMO items
-    if (item.type === 'memo') return null;
-
     const style = getNoteStyle(item.text, item.type);
+    if (item.type === 'memo') return null; 
     return (
         <div className={`absolute rounded-full transition-all duration-300 ease-out ${item.color}`} style={{ left: item.x, top: item.y, width: style.width, height: style.height }} />
     );
 };
 
-// Memo Background (Outside Gooey Filter)
 const MemoBackground = ({ item }) => {
     const style = getNoteStyle(item.text, item.type);
     return (
@@ -210,6 +159,7 @@ const GooeyLine = ({ id, from, to, fromColor, toColor, offset, label }) => {
 };
 
 const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, onUnlink, onStartConnection, isSelected, isTargeted, mode, isEditing, setEditingId, isUnlinking }) => {
+  if (!item) return null;
   const isMemo = item.type === 'memo';
   const isGrouped = !!item.groupId;
   const styleInfo = getNoteStyle(item.text, item.type);
@@ -280,11 +230,12 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
                 autoFocus 
                 className={`w-full h-full bg-transparent resize-none border-none focus:ring-0 text-center ${fontSize} ${isMemo ? 'text-slate-700 font-medium' : 'text-gray-900 font-bold'} p-0 select-text leading-tight`} 
                 value={item.text} 
-                placeholder={styleInfo.isMemo ? "输入备注..." : ""} 
+                placeholder={styleInfo.isMemo ? "" : ""} 
                 onChange={(e) => onUpdateText(item.id, e.target.value)} 
                 onKeyDown={(e) => { 
                     if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingId(null); } 
                 }} 
+                onMouseDown={(e) => e.stopPropagation()} 
             />
         ) : (
             <>
@@ -303,18 +254,18 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
                 {item.groupId && ( 
                     <button 
                         onClick={() => { onUnlink(item.id); setEditingId(null); }} 
-                        className="text-slate-500 hover:text-indigo-600 hover:bg-slate-100 p-1 rounded transition-colors flex items-center gap-1 text-xs font-bold whitespace-nowrap" 
+                        className="text-slate-500 hover:text-indigo-600 hover:bg-slate-100 p-1 rounded transition-colors flex items-center gap-1" 
                         title="解绑"
                     >
-                        <Unlink size={14} /> 解绑
+                        <Unlink size={16} />
                     </button>
                 )}
                 <button 
                     onClick={() => { onDelete(item.id); setEditingId(null); }} 
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors flex items-center gap-1 text-xs font-bold whitespace-nowrap" 
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors flex items-center gap-1" 
                     title="删除"
                 >
-                    <Trash2 size={14} /> 删除
+                    <Trash2 size={16} />
                 </button>
             </div>
         )}
@@ -334,22 +285,21 @@ const ConnectionOverlay = ({ connection, from, to, onDelete, offset, onMouseDown
       <g 
         transform={`translate(${curveData.labelX}, ${curveData.labelY})`}
         onMouseDown={(e) => onMouseDownHandle(e, connection.id, 'connectionHandle')}
-        // RE-ADDED: Double Click to Edit
         onDoubleClick={(e) => { e.stopPropagation(); onDoubleClickEdit(connection.id); }} 
         className="cursor-move"
       >
-          {/* Hit area matching the pill shape */}
-           {label ? (
+          {/* HIT AREA */}
+          {label ? (
                  <rect 
                     x={-width / 2}
                     y={-height / 2}
                     width={width}
                     height={height}
                     rx={height/2}
-                    fill="transparent"
+                    fill="rgba(255,255,255,0.01)" 
                  />
             ) : (
-                <circle cx="0" cy="0" r="45" fill="transparent" />
+                <circle cx="0" cy="0" r="45" fill="rgba(255,255,255,0.01)" />
             )}
           
           <text y="4" textAnchor="middle" fontSize="12" fontWeight="bold" fill="#334155" className="select-none font-sans pointer-events-none drop-shadow-sm">
@@ -367,11 +317,9 @@ const ConnectionOverlay = ({ connection, from, to, onDelete, offset, onMouseDown
 };
 
 export default function KJAnalysisBoard() {
-  const [step, setStep] = useState('upload'); 
   const [items, setItems] = useState([]);
   const [connections, setConnections] = useState([]);
-  const [mode, setMode] = useState('move'); 
-  const [statusMsg, setStatusMsg] = useState('');
+  // No mode needed anymore
   const [boardName, setBoardName] = useState('未命名分析');
   const boardRef = useRef(null); 
   const contentRef = useRef(null); 
@@ -381,7 +329,7 @@ export default function KJAnalysisBoard() {
   const [editingConnId, setEditingConnId] = useState(null);
   const [unlinkingId, setUnlinkingId] = useState(null); 
   const [isExporting, setIsExporting] = useState(false);
-  const [isPdfEngineReady, setIsPdfEngineReady] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   
   const hoverTimeoutRef = useRef(null); 
   const hoverCandidateIdRef = useRef(null); 
@@ -401,80 +349,21 @@ export default function KJAnalysisBoard() {
   });
 
   useEffect(() => {
-    const scripts = [
-        { src: PDFJS_CDN, onload: () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN; } },
-        { src: HTML2CANVAS_CDN },
-        { src: JSPDF_CDN }
-    ];
-
-    scripts.forEach(s => {
-        if (!document.querySelector(`script[src="${s.src}"]`)) {
+    // Only export libs needed now
+    [HTML2CANVAS_CDN, JSPDF_CDN].forEach(src => {
+        if (!document.querySelector(`script[src="${src}"]`)) {
             const script = document.createElement('script');
-            script.src = s.src;
-            if(s.onload) script.onload = s.onload;
+            script.src = src;
             document.head.appendChild(script);
         }
     });
+
+    // Init with one blank note if empty
+    if (items.length === 0) {
+        setItems([{ id: `manual-${Date.now()}`, text: "", count: 0, type: 'noun', color: POS_TYPES.NOUN.color, borderColor: POS_TYPES.NOUN.borderColor, strokeColor: POS_TYPES.NOUN.strokeColor, gradientText: POS_TYPES.NOUN.gradientText, x: 500, y: 300, groupId: null }]);
+    }
   }, []);
 
-  const handleFileUpload = async (e) => {
-    if (!isPdfEngineReady) {
-        alert("PDF 引擎正在加载中，请稍候...");
-        return;
-    }
-    const selectedFile = e.target.files[0];
-    if (selectedFile && selectedFile.type === 'application/pdf') {
-        const name = selectedFile.name.replace('.pdf', '');
-        setBoardName(name); 
-        processPDF(selectedFile);
-    }
-  };
-
-  const processPDF = async (pdfFile) => {
-    setStep('processing');
-    setStatusMsg('正在读取 PDF 内容...');
-    try {
-      if (!window.pdfjsLib) throw new Error("PDF 引擎尚未加载完成");
-      const arrayBuffer = await pdfFile.arrayBuffer();
-      const pdf = await window.pdfjsLib.getDocument(arrayBuffer).promise;
-      let fullText = "";
-      const maxPages = Math.min(pdf.numPages, 30);
-      for (let i = 1; i <= maxPages; i++) {
-        setStatusMsg(`正在分析第 ${i} / ${pdf.numPages} 页...`);
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        fullText += textContent.items.map(item => item.str).join("") + "\n";
-      }
-      setStatusMsg('正在進行多語言智能分詞與行為識別...');
-      await new Promise(r => setTimeout(r, 100));
-      const extractedItems = smartExtractKeywords(fullText, 30);
-      if (extractedItems.length === 0) throw new Error("未能提取到有效关键词");
-      
-      const GAP = 180; const COLS = 6; const START_X = 150; const START_Y = 150;
-      const scatteredItems = extractedItems.map((item, index) => ({
-        ...item,
-        x: START_X + (index % COLS) * GAP + (Math.random() * 20 - 10), 
-        y: START_Y + Math.floor(index / COLS) * GAP + (Math.random() * 20 - 10)
-      }));
-
-      setItems(scatteredItems);
-      setConnections([]);
-      setStep('board');
-    } catch (err) {
-      console.error(err);
-      alert(`错误: ${err.message}`);
-      setStep('upload');
-    }
-  };
-
-  const handleStartBlank = () => {
-    const initialMemo = { id: `memo-${Date.now()}`, text: "点击顶部按钮添加便签，或双击空白处", count: 0, type: 'memo', color: POS_TYPES.MEMO.color, borderColor: POS_TYPES.MEMO.borderColor, strokeColor: POS_TYPES.MEMO.strokeColor, gradientText: POS_TYPES.MEMO.gradientText, x: 1000, y: 750, groupId: null };
-    setItems([initialMemo]);
-    setConnections([]); 
-    setStep('board');
-  };
-
-  // --- Save / Load Logic ---
   const handleSaveToFile = () => {
     const dateStr = new Date().toISOString().split('T')[0];
     const data = { boardName, items, connections, date: Date.now() }; 
@@ -500,7 +389,6 @@ export default function KJAnalysisBoard() {
            setItems(parsed.items);
            setConnections(parsed.connections || []);
            if (parsed.boardName) setBoardName(parsed.boardName); 
-           setStep('board');
         } else {
            alert("文件格式不正确，无法读取");
         }
@@ -518,6 +406,7 @@ export default function KJAnalysisBoard() {
   };
 
   const handleExport = async (format) => {
+      setShowExportMenu(false);
       if (!contentRef.current || !window.html2canvas) return;
       setIsExporting(true);
       try {
@@ -553,7 +442,7 @@ export default function KJAnalysisBoard() {
       } catch (err) { console.error("Export failed:", err); alert("导出失败，请重试"); } finally { setIsExporting(false); }
   };
 
-  const clearBoard = () => { if(confirm('确定要清空所有内容吗？')) { setItems([]); setConnections([]); setBoardName('未命名分析'); setStep('upload'); } };
+  const clearBoard = () => { if(confirm('确定要清空所有内容吗？')) { setItems([]); setConnections([]); setBoardName('未命名分析'); } };
   const handleDeleteItem = (id) => { setItems(items.filter(i => i.id !== id)); setConnections(conn => conn.filter(c => c.fromId !== id && c.toId !== id)); };
   const handleUnlinkItem = (id) => { setUnlinkingId(id); setTimeout(() => { setItems(prev => prev.map(i => i.id === id ? { ...i, groupId: null } : i)); setUnlinkingId(null); }, 300); };
   const handleDeleteConnection = (id) => setConnections(prev => prev.filter(c => c.id !== id));
@@ -563,14 +452,16 @@ export default function KJAnalysisBoard() {
   const handleUpdateText = (id, newText) => { setItems(items.map(i => i.id === id ? { ...i, text: newText } : i)); };
   
   const handleAddNote = (x, y) => {
-    const posX = x !== undefined ? x : 300 + Math.random() * 50;
-    const posY = y !== undefined ? y : 300 + Math.random() * 50;
-    const newNote = { id: `manual-${Date.now()}`, text: "双击编辑", count: 0, type: 'noun', color: POS_TYPES.NOUN.color, borderColor: POS_TYPES.NOUN.borderColor, strokeColor: POS_TYPES.NOUN.strokeColor, gradientText: POS_TYPES.NOUN.gradientText, x: posX, y: posY, groupId: null };
+    // Safety check for NaN coords
+    if (isNaN(x) || isNaN(y)) {
+         x = 500; y = 300;
+    }
+    const newNote = { id: `manual-${Date.now()}`, text: "", count: 0, type: 'noun', color: POS_TYPES.NOUN.color, borderColor: POS_TYPES.NOUN.borderColor, strokeColor: POS_TYPES.NOUN.strokeColor, gradientText: POS_TYPES.NOUN.gradientText, x: x, y: y, groupId: null };
     setItems(prev => [...prev, newNote]);
   };
 
   const handleAddMemo = () => {
-    const newMemo = { id: `memo-${Date.now()}`, text: "备注", count: 0, type: 'memo', color: POS_TYPES.MEMO.color, borderColor: POS_TYPES.MEMO.borderColor, strokeColor: POS_TYPES.MEMO.strokeColor, gradientText: POS_TYPES.MEMO.gradientText, x: 350 + Math.random() * 50, y: 350 + Math.random() * 50, groupId: null };
+    const newMemo = { id: `memo-${Date.now()}`, text: "", count: 0, type: 'memo', color: POS_TYPES.MEMO.color, borderColor: POS_TYPES.MEMO.borderColor, strokeColor: POS_TYPES.MEMO.strokeColor, gradientText: POS_TYPES.MEMO.gradientText, x: 350 + Math.random() * 50, y: 350 + Math.random() * 50, groupId: null };
     setItems(prev => [...prev, newMemo]);
   };
 
@@ -599,7 +490,7 @@ export default function KJAnalysisBoard() {
     if(e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'TEXTAREA') return;
     if (editingId || editingConnId) { setEditingId(null); setEditingConnId(null); return; }
     
-    // Board Selection Logic
+    // Board Selection Logic (Click on background)
     if (type === 'board') {
         const rect = boardRef.current.getBoundingClientRect();
         const startX = e.clientX - rect.left + boardRef.current.scrollLeft;
@@ -737,7 +628,6 @@ export default function KJAnalysisBoard() {
         setIsLassoing(false);
         const points = lassoPoints;
         setLassoPoints([]);
-        
         if (points.length > 2) {
             const newSelected = new Set();
             items.forEach(item => {
@@ -772,11 +662,6 @@ export default function KJAnalysisBoard() {
         }
     }
     if (dragState.isDragging && dragState.type === 'note') {
-        if (selectedIds.size > 1 && selectedIds.has(dragState.id)) {
-            setDragState({ ...dragState, isDragging: false });
-            return;
-        }
-
         const item = items.find(i => i.id === dragState.id);
         if (item) {
             // Check for memo dropping on connection
@@ -816,7 +701,8 @@ export default function KJAnalysisBoard() {
   };
 
   const handleBoardDoubleClick = (e) => {
-      if (e.target === e.currentTarget && mode === 'move') {
+      // Only handle if clicking directly on the board background
+      if (e.target === e.currentTarget) {
           const rect = boardRef.current.getBoundingClientRect();
           const x = e.clientX - rect.left + boardRef.current.scrollLeft;
           const y = e.clientY - rect.top + boardRef.current.scrollTop;
@@ -847,111 +733,70 @@ export default function KJAnalysisBoard() {
 
       <GooeyFilters />
       
-      {/* Header */}
-      <header className="h-16 bg-white border-b border-stone-200 flex items-center px-4 justify-between shadow-sm z-50 shrink-0 relative no-export">
-        <div className="flex items-center gap-2">
-          <BrainCircuit className="text-indigo-600" />
-          {step === 'board' ? (
-             <input
-                type="text"
-                value={boardName}
-                onChange={(e) => setBoardName(e.target.value)}
-                className="text-lg font-bold tracking-tight text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none w-80 transition-all px-1"
-                title="点击修改画板名称"
-            />
-          ) : (
-             <h1 className="text-lg font-bold tracking-tight text-slate-800 hidden sm:block">KJ法智能白板 <span className="text-xs font-normal text-slate-400">Pro</span></h1>
-          )}
-        </div>
-        {step === 'board' && (
-          <div className="flex items-center gap-2">
-             <div className="flex items-center gap-1 border-r border-slate-200 pr-2 mr-2">
-                 <button onClick={handleSaveToFile} className="flex items-center gap-1 px-2 py-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded text-xs font-medium transition-colors" title="保存数据 (.json)"><Save size={16}/> 另存数据</button>
-                 <button onClick={triggerFileInput} className="flex items-center gap-1 px-2 py-1.5 text-slate-600 hover:bg-slate-100 rounded text-xs font-medium transition-colors" title="读取数据 (.json)"><Upload size={16}/> 读取</button>
+      {/* 2. Top-Center Toolbar (The Pill) - Merged Header */}
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-1 bg-white/80 backdrop-blur-md shadow-xl border border-white/50 rounded-full px-2 py-1.5 transition-all hover:shadow-2xl no-export">
+             {/* Title Input Area */}
+             <div className="flex items-center px-2 border-r border-slate-200/60 mr-1">
+                 <input
+                    type="text"
+                    value={boardName}
+                    onChange={(e) => setBoardName(e.target.value)}
+                    className="text-sm font-bold tracking-tight text-slate-700 bg-transparent border-none focus:ring-0 w-32 text-center placeholder-slate-400"
+                    placeholder="未命名分析"
+                    title="点击修改名称"
+                />
+             </div>
+
+             {/* File Group */}
+             <div className="flex items-center gap-0.5 border-r border-slate-200/60 pr-1 mr-1">
+                 <button onClick={handleSaveToFile} className="flex items-center justify-center w-9 h-9 text-indigo-600 hover:bg-indigo-50/80 rounded-full transition-colors" title="保存数据"><Save size={20}/></button>
+                 <button onClick={triggerFileInput} className="flex items-center justify-center w-9 h-9 text-slate-600 hover:bg-slate-100/80 rounded-full transition-colors" title="读取数据"><Upload size={20}/></button>
              </div>
              
-             {/* Export Buttons */}
-             <div className="flex items-center gap-1 mr-2 border-l border-slate-200 pl-2">
-                <button onClick={() => handleExport('png')} disabled={isExporting} className="flex items-center gap-1 px-2 py-1.5 text-slate-600 hover:bg-slate-100 rounded text-xs font-medium transition-colors" title="导出为PNG"><ImageIcon size={16}/> PNG</button>
-                <button onClick={() => handleExport('pdf')} disabled={isExporting} className="flex items-center gap-1 px-2 py-1.5 text-slate-600 hover:bg-slate-100 rounded text-xs font-medium transition-colors" title="导出为PDF"><FileType size={16}/> PDF</button>
+             {/* Actions Group */}
+             <div className="flex items-center gap-0.5 border-r border-slate-200/60 pr-1 mr-1">
+                <button onClick={() => handleAddNote()} className="flex items-center justify-center w-9 h-9 bg-yellow-100/80 hover:bg-yellow-200 text-yellow-800 rounded-full transition-colors shadow-sm" title="添加便签"><Plus size={20} /></button>
+                <button onClick={handleAddMemo} className="flex items-center justify-center w-9 h-9 bg-white/50 hover:bg-white text-slate-600 rounded-full transition-colors shadow-sm ring-1 ring-slate-200" title="添加备注"><MemoIcon size={20} /></button>
              </div>
 
-             <button onClick={() => handleAddNote()} className="flex items-center gap-1 px-3 py-1.5 bg-yellow-100 border border-yellow-300 text-yellow-800 rounded hover:bg-yellow-200 text-sm font-medium transition-colors shadow-sm"><Plus size={16} /></button>
-             <button onClick={handleAddMemo} className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded hover:bg-slate-50 text-sm font-medium transition-colors shadow-sm"><MemoIcon size={16} /></button>
-             <button onClick={clearBoard} className="flex items-center gap-1 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded text-sm transition-colors"><Trash2 size={16} /></button>
-          </div>
-        )}
-      </header>
+             {/* Export & Clear */}
+             <div className="relative flex items-center gap-0.5">
+                <button 
+                    onClick={() => setShowExportMenu(!showExportMenu)}
+                    className="flex items-center justify-center w-9 h-9 text-slate-600 hover:bg-slate-100/80 rounded-full transition-colors"
+                    title="导出"
+                >
+                    <Download size={20}/>
+                </button>
+                {showExportMenu && (
+                    <div className="absolute top-full right-0 mt-2 bg-white/90 backdrop-blur-md border border-slate-200 rounded-xl shadow-xl flex flex-col p-1 z-[1000] min-w-[50px]">
+                        <button onClick={() => handleExport('png')} className="flex items-center justify-center p-2 hover:bg-slate-100 rounded-lg text-slate-700 transition-colors" title="PNG"><ImageIcon size={20}/></button>
+                        <button onClick={() => handleExport('pdf')} className="flex items-center justify-center p-2 hover:bg-slate-100 rounded-lg text-slate-700 transition-colors" title="PDF"><FileType size={20}/></button>
+                    </div>
+                )}
+                
+                <button onClick={clearBoard} className="flex items-center justify-center w-9 h-9 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-full transition-colors" title="清空画板"><Trash2 size={20} /></button>
+             </div>
+      </div>
 
       {/* Main Board Area */}
-      <main className="flex-1 relative overflow-auto bg-stone-100 select-none" ref={boardRef} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDragStart={(e) => e.preventDefault()}>
+      <main className="h-full w-full relative overflow-auto bg-stone-100 select-none" ref={boardRef} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDragStart={(e) => e.preventDefault()}>
         {isExporting && (
-            <div className="fixed inset-0 bg-black/20 z-[999] flex items-center justify-center">
-                <div className="bg-white p-4 rounded-lg shadow-xl flex items-center gap-3">
-                    <RefreshCw className="animate-spin text-indigo-600" /> <span>正在导出...</span>
+            <div className="fixed inset-0 bg-black/20 z-[999] flex items-center justify-center backdrop-blur-sm">
+                <div className="bg-white/90 p-6 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/50">
+                    <RefreshCw className="animate-spin text-indigo-600 w-8 h-8" /> 
                 </div>
             </div>
         )}
 
-        {step === 'upload' && (
-          <div className="flex flex-col items-center justify-center h-full animate-in fade-in zoom-in duration-500 relative z-50">
-            <div className="bg-white p-10 rounded-xl shadow-xl border border-stone-200 text-center max-w-lg w-full">
-              <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6 text-indigo-600 ring-4 ring-indigo-50"><FileText size={32} /></div>
-              <h2 className="text-xl font-bold mb-2">开始你的 KJ 法分析</h2>
-              <p className="text-stone-500 mb-6 text-sm px-4">支持 <strong>中文 / 日语 / 英语</strong> 文献。<br/>上传 PDF，智能提取<b>行为、体验与对象</b>。</p>
-              
-              <label className="block w-full cursor-pointer group">
-                <input type="file" accept="application/pdf" onChange={handleFileUpload} className="hidden" />
-                <div className="border-2 border-dashed border-indigo-300 rounded-lg p-6 group-hover:bg-indigo-50 group-hover:border-indigo-500 transition-all">
-                    <span className="text-indigo-600 font-medium">
-                        {isPdfEngineReady ? "点击上传 PDF" : (
-                            <span className="flex items-center gap-2">
-                                <RefreshCw className="animate-spin" size={16}/> 引擎加载中...
-                            </span>
-                        )}
-                    </span>
-                </div>
-              </label>
-              
-              <div className="flex items-center gap-4 my-6 w-full"><div className="h-px bg-slate-200 flex-1"></div><span className="text-slate-400 text-sm">或</span><div className="h-px bg-slate-200 flex-1"></div></div>
-              
-              <div className="flex flex-col gap-3 w-full">
-                  <button 
-                    onClick={handleStartBlank}
-                    className="w-full py-3 bg-white border-2 border-slate-200 text-slate-600 font-bold rounded-lg hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Layout size={20} />
-                    从空白画板开始
-                  </button>
-
-                  <button 
-                    onClick={triggerFileInput}
-                    className="w-full py-3 bg-indigo-50 border-2 border-indigo-200 text-indigo-700 font-bold rounded-lg hover:bg-indigo-100 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Upload size={20} />
-                    打开存档文件 (.json)
-                  </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {step === 'processing' && (
-          <div className="flex flex-col items-center justify-center h-full relative z-50">
-            <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-            <h3 className="text-md font-medium text-slate-700 mt-4">{statusMsg}</h3>
-          </div>
-        )}
-
-        {step === 'board' && (
-          <div 
+        <div 
             ref={contentRef}
             id="kj-board-canvas"
             className={`w-[2400px] h-[1600px] relative bg-stone-100 cursor-default`}
             style={{backgroundImage: 'radial-gradient(#cbd5e1 1.5px, transparent 1.5px)', backgroundSize: '24px 24px'}}
             onDoubleClick={handleBoardDoubleClick}
             onMouseDown={(e) => handleMouseDown(e, null, 'board')} 
-          >
+        >
              {/* Gooey Layer */}
              <div className="absolute inset-0 pointer-events-none z-0" style={{ filter: 'url(#goo)' }}>
                 <svg className="absolute inset-0 w-full h-full overflow-visible">
@@ -999,7 +844,7 @@ export default function KJAnalysisBoard() {
                             autoFocus
                             className="w-32 px-2 py-1 text-center text-xs border border-indigo-500 rounded shadow-lg focus:outline-none bg-white select-text pointer-events-auto"
                             value={conn.label || ''}
-                            placeholder="输入关系..."
+                            placeholder="输入..."
                             onChange={(e) => handleUpdateConnectionLabel(conn.id, e.target.value)}
                             onBlur={() => setEditingConnId(null)}
                             onKeyDown={(e) => { if (e.key === 'Enter') setEditingConnId(null); }}
@@ -1064,7 +909,6 @@ export default function KJAnalysisBoard() {
                />
              ))}
           </div>
-        )}
       </main>
       
       <style>{`
