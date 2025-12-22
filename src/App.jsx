@@ -1,18 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FileText, Plus, X, RefreshCw, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout } from 'lucide-react';
+import { FileText, Plus, X, RefreshCw, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette } from 'lucide-react';
 
 // NOTE: External Libraries injected dynamically via CDN
-const PDFJS_CDN = "[https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js](https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js)";
-const PDFJS_WORKER_CDN = "[https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js](https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js)";
-const HTML2CANVAS_CDN = "[https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js](https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js)";
-const JSPDF_CDN = "[https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js](https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js)";
+const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDFJS_WORKER_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const HTML2CANVAS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+const JSPDF_CDN = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
 
 // --- Configuration ---
 const STOP_WORDS = new Set(["的","了","在","是","和","就","都","而","及","与","着","或","一个","没有","我们","你们","他们","它","将","为","之","对","不","把","去","但","其","以","从","更","很","也","还","来","做","上","下","中","让","被","给","到","等","比如","例如","虽然","因为","所以","如果","但是","以及","对于","关于","按照","为了","通过","这些","那些","它们","这个","那个","这种","那种","可以说","如图","所示","本文","部分","主要","一种","可以","具有","通常","其中","情况","方面","非常","需要","能够","使得","结果","表明","数据","方法","存在","不同","问题","文章","the","and","of","to","a","in","is","that","for","it","as","was","with","on","by","be","の","に","は","を","が","で","と","も","から","まで","より","へ","や","か","ね","よ","ある","いる","する","なる","れる","られる","ない","たい","ます","です","だ","た","て","こと","もの","ため","よう","わけ","ところ","さん","様","私","僕","彼","彼女","それ","これ","あれ","しかし","また","そして","さらに","つまり","したがって","あるいは","または","なお","ただ","および","よる","研究","分析","論文","本稿","考察","結果","明らか","考え","行う","用いる","述べる","示す","場合","影響","問題","必要","重要","可能","利用","使用","比較","検討","報告","方法","データ","において","について","に対して","に関して","による","によって","として","における","対する","関する"]);
 
 const KNOWN_VERBS = new Set(["観光","旅行","訪問","滞在","宿泊","移動","到着","出発","散策","散歩","周遊","見学","鑑賞","体験","参加","交流","接触","協力","共有","相談","質問","回答","説明","案内","会話","議論","楽しむ","遊ぶ","触れる","聞く","話す","会う","知る","購買","消費","買い物","食事","飲食","喫食","休憩","予約","支払い","購入","注文","食べる","飲む","買う","選ぶ","探す","待つ","並ぶ","撮る","書く","読む","見る","感知","認識","理解","学習","記憶","想起","思考","判断","選択","決定","計画","意図","感じる","思う","考える","迷う","驚く","喜ぶ","怒る","困る","期待","満足","观光","游览","参观","访问","到达","离开","进入","停留","行走","漫步","移动","前往","出发","返回","经过","穿越","驻足","集合","解散","住宿","露营","参加","参与","加入","体验","互动","交流","沟通","分享","协助","合作","接触","咨询","询问","回答","解释","说明","介绍","讨论","争论","协商","求助","引导","感知","观察","观看","注视","聆听","听说","注意","发现","寻找","搜索","识别","理解","学习","记忆","回忆","思考","判断","选择","决定","计划","打算","放弃","喜爱","厌恶","抱怨","赞赏","期待","担心","享受","感受","购买","消费","支付","预订","排队","等待","使用","操作","点击","浏览","拍摄","记录","填写","阅读","书写","携带","丢弃","整理","休息","用餐","饮食","品尝"]);
 
-const KNOWN_ADJS = new Set(["満足","不満","快適","不快","便利","不便","安全","危険","幸福","不安","楽しい","嬉しい","面白い","つまらない","美しい","綺麗","汚い","すごい","素晴らしい","高い","安い","多い","少ない","良い","悪い","好き","嫌い","混雑","静寂","静か","賑やか","清潔","広大","狭い","新しい","古い","複雑","簡単","容易","伝統的","現代的","文化的","自然的","人工的","積極的","消極的","具体的","满意","失望","舒适","愉快","有趣","无聊","丰富","单调","新奇","独特","典型","方便","便捷","困难","复杂","简单","安全","危险","昂贵","便宜","拥挤","嘈杂","安静","整洁","脏乱","开放","封闭","现代","传统","自然","人工","动态","静态","稳定","波动","频繁","偶尔","持续","短暂","active","passive","positive","negative","satisfied","crowded","convenient"]);
+const KNOWN_ADJS = new Set(["満足","不満","快適","不快","便利","不便","安全","危険","幸福","不安","楽しい","嬉しい","面白い","つまらない","美しい","綺麗","汚い","すごい","素晴らしい","高い","安い","多い","少ない","良い","悪い","好き","嫌い","混雑","静寂","静か","賑やか","清潔","広大","狭い","新しい","古い","複雑","簡単","容易","伝統的","現代的","文化的","自然的","人工的","積極的","消極的","具体的","满意","失望","舒适","愉快","有趣","无聊","丰富","单调","新奇","独特","典型","方便","便捷","困難","复杂","简单","安全","危险","昂贵","便宜","拥挤","嘈杂","安静","整洁","脏乱","开放","封闭","现代","传统","自然","人工","动态","静态","稳定","波动","频繁","偶尔","持续","短暂","active","passive","positive","negative","satisfied","crowded","convenient"]);
 
 const POS_TYPES = {
   NOUN: { id: 'noun', label: '名词', color: 'bg-yellow-300', borderColor: 'border-yellow-400', strokeColor: 'stroke-yellow-300', gradientText: 'text-yellow-300' }, 
@@ -21,7 +21,7 @@ const POS_TYPES = {
   PINK: { id: 'pink', label: '粉色', color: 'bg-gradient-to-br from-pink-300 to-rose-300', borderColor: 'border-pink-400', strokeColor: 'stroke-pink-400', gradientText: 'text-pink-400' },
   PURPLE: { id: 'purple', label: '紫色', color: 'bg-gradient-to-br from-purple-300 to-violet-300', borderColor: 'border-purple-400', strokeColor: 'stroke-purple-400', gradientText: 'text-purple-400' },
   ORANGE: { id: 'orange', label: '橙色', color: 'bg-gradient-to-br from-orange-300 to-red-300', borderColor: 'border-orange-400', strokeColor: 'stroke-orange-400', gradientText: 'text-orange-400' },
-  MEMO: { id: 'memo', label: '备注', color: 'bg-white', borderColor: 'border-slate-300', strokeColor: 'stroke-slate-200', gradientText: 'text-slate-200' }, 
+  MEMO: { id: 'memo', label: '备注', color: 'bg-white/60 backdrop-blur-md shadow-sm', borderColor: 'border-slate-300', strokeColor: 'stroke-slate-200', gradientText: 'text-slate-200' }, 
 };
 
 const guessPOS = (word) => {
@@ -39,8 +39,9 @@ const getNoteStyle = (text, type) => {
   const isMemo = type === 'memo';
   const len = text ? text.length : 0;
   if (isMemo) {
-    let widthRem = 9; let heightRem = 5; 
-    if (len > 15) widthRem = Math.min(18, 9 + (len - 15) * 0.4);
+    let widthRem = 12; 
+    let heightRem = 4; 
+    if (len > 15) widthRem = Math.min(24, 12 + (len - 15) * 0.4);
     return { width: `${widthRem}rem`, height: `${heightRem}rem`, widthVal: widthRem * 16, heightVal: heightRem * 16, fontSize: 'text-sm', isMemo: true };
   } else {
     let sizeRem = 9; let fontSize = 'text-lg';
@@ -52,12 +53,15 @@ const getNoteStyle = (text, type) => {
   }
 };
 
+// SAFETY CHECK: Guard against undefined item to prevent white screen
 const getCenter = (item) => {
+    if (!item) return { x: 0, y: 0 }; 
     const style = getNoteStyle(item.text, item.type);
     return { x: item.x + style.widthVal / 2, y: item.y + style.heightVal / 2 };
 };
 
 const getCurvePoints = (from, to, offset = {x: 0, y: 0}) => {
+    if (!from || !to) return { path: '', labelX: 0, labelY: 0 };
     const midX = (from.x + to.x) / 2;
     const midY = (from.y + to.y) / 2;
     const cpX = midX + offset.x;
@@ -65,6 +69,25 @@ const getCurvePoints = (from, to, offset = {x: 0, y: 0}) => {
     const labelX = midX + 0.5 * offset.x;
     const labelY = midY + 0.5 * offset.y;
     return { path: `M${from.x},${from.y} Q${cpX},${cpY} ${to.x},${to.y}`, labelX, labelY };
+};
+
+const getLabelDimensions = (label) => {
+    const len = label ? label.length : 0;
+    const width = Math.max(36, len * 12 + 16); 
+    const height = 36; 
+    return { width, height, rx: height / 2 };
+};
+
+const isPointInPolygon = (point, vs) => {
+    let x = point[0], y = point[1];
+    let inside = false;
+    for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        let xi = vs[i][0], yi = vs[i][1];
+        let xj = vs[j][0], yj = vs[j][1];
+        let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
 };
 
 const smartExtractKeywords = (text, limit = 30) => {
@@ -104,7 +127,7 @@ const processWord = (rawWord, freqMap) => {
 const ColorPicker = ({ onChange, currentType }) => (
   <div className="flex gap-1 mt-2 justify-center" onMouseDown={e => e.stopPropagation()}>
     {Object.entries(POS_TYPES).filter(([k]) => k !== 'MEMO').map(([key, config]) => (
-      <button key={key} title={config.label} onClick={() => onChange(config)} className={`w-4 h-4 rounded-full border border-black/10 transition-transform hover:scale-125 ${config.color} ${currentType === config.id ? 'ring-2 ring-stone-400' : ''}`} />
+      <button key={key} title={config.label} onClick={() => onChange(config)} className={`w-4 h-4 rounded-full border border-black/10 transition-transform hover:scale-110 ${config.color} ${currentType === config.id ? 'ring-2 ring-indigo-500 ring-offset-1' : ''}`} />
     ))}
   </div>
 );
@@ -113,8 +136,8 @@ const GooeyFilters = () => (
   <svg style={{ position: 'absolute', width: 0, height: 0, pointerEvents: 'none' }}>
     <defs>
       <filter id="goo">
-        <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur" />
-        <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9" result="goo" />
+        <feGaussianBlur in="SourceGraphic" stdDeviation="20" result="blur" />
+        <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 40 -10" result="goo" />
         <feComposite in="SourceGraphic" in2="goo" operator="atop"/>
       </filter>
     </defs>
@@ -122,17 +145,37 @@ const GooeyFilters = () => (
 );
 
 const BlobBackground = ({ item }) => {
+    // Only render blob background for NON-MEMO items
+    if (item.type === 'memo') return null;
+
     const style = getNoteStyle(item.text, item.type);
     return (
         <div className={`absolute rounded-full transition-all duration-300 ease-out ${item.color}`} style={{ left: item.x, top: item.y, width: style.width, height: style.height }} />
     );
 };
 
-const GooeyLine = ({ id, from, to, fromColor, toColor, offset }) => {
+// Memo Background (Outside Gooey Filter)
+const MemoBackground = ({ item }) => {
+    const style = getNoteStyle(item.text, item.type);
+    return (
+        <div 
+            className={`absolute rounded-full transition-all duration-300 ease-out ${item.color}`} 
+            style={{ 
+                left: item.x, 
+                top: item.y, 
+                width: style.width, 
+                height: style.height,
+            }} 
+        />
+    );
+};
+
+const GooeyLine = ({ id, from, to, fromColor, toColor, offset, label }) => {
     if (!from || !to) return null;
     const gradientId = `grad-${id}`;
     const curveData = getCurvePoints(from, to, offset);
-    
+    const { width, height, rx } = getLabelDimensions(label);
+
     return (
         <g>
             <defs>
@@ -143,29 +186,85 @@ const GooeyLine = ({ id, from, to, fromColor, toColor, offset }) => {
                     <stop offset="100%" className={toColor} stopColor="currentColor" stopOpacity="1" />
                 </linearGradient>
             </defs>
-            <path d={curveData.path} stroke={`url(#${gradientId})`} strokeWidth="32" strokeLinecap="round" fill="none" />
-            <circle cx={curveData.labelX} cy={curveData.labelY} r="24" fill={`url(#${gradientId})`} />
+            <path 
+                d={curveData.path} 
+                stroke={`url(#${gradientId})`} 
+                strokeWidth="18" 
+                strokeLinecap="round" 
+                fill="none" 
+            />
+            {label ? (
+                 <rect 
+                    x={curveData.labelX - width / 2}
+                    y={curveData.labelY - height / 2}
+                    width={width}
+                    height={height}
+                    rx={rx}
+                    fill={`url(#${gradientId})`}
+                 />
+            ) : (
+                <circle cx={curveData.labelX} cy={curveData.labelY} r="18" fill={`url(#${gradientId})`} />
+            )}
         </g>
     );
 };
 
-const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, onUnlink, isSelected, isTargeted, mode, isEditing, setEditingId, isUnlinking }) => {
+const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, onUnlink, onStartConnection, isSelected, isTargeted, mode, isEditing, setEditingId, isUnlinking }) => {
   const isMemo = item.type === 'memo';
   const isGrouped = !!item.groupId;
   const styleInfo = getNoteStyle(item.text, item.type);
   const { fontSize } = styleInfo;
   
+  const borderClass = isMemo ? `border ${item.borderColor}` : '';
+
   return (
     <div
-        onMouseDown={(e) => { if (isEditing) { e.stopPropagation(); } else { onMouseDown(e, item.id, 'note'); } }}
-        onDoubleClick={(e) => { e.stopPropagation(); if (mode === 'move') setEditingId(item.id); }}
-        onClick={(e) => { if (e.detail === 3 && item.groupId) { e.stopPropagation(); onUnlink(item.id); } }}
-        style={{ left: item.x, top: item.y, width: styleInfo.width, height: styleInfo.height, cursor: mode === 'connect' ? 'crosshair' : (isEditing ? 'text' : 'move'), zIndex: isSelected || isEditing ? 300 : (isTargeted ? 150 : 10), transform: isTargeted ? 'scale(1.05)' : 'scale(1)', animation: isUnlinking ? 'shake 0.3s cubic-bezier(.36,.07,.19,.97) both' : 'none' }}
-        className={`absolute p-4 flex flex-col items-center justify-center text-center transition-all duration-300 ease-out select-none rounded-full group ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2' : (isTargeted ? 'ring-4 ring-indigo-300 ring-offset-2' : (isGrouped ? 'border-2 border-dashed border-indigo-400/50' : ''))}`}
+        onMouseDown={(e) => { 
+            if (isEditing) { 
+                e.stopPropagation(); 
+            } else { 
+                onMouseDown(e, item.id, 'note'); 
+            } 
+        }}
+        onDoubleClick={(e) => { 
+            e.stopPropagation(); 
+            setEditingId(item.id); 
+        }}
+        style={{ 
+            left: item.x, 
+            top: item.y, 
+            width: styleInfo.width, 
+            height: styleInfo.height, 
+            cursor: isEditing ? 'auto' : 'move', 
+            zIndex: isSelected || isEditing ? 300 : (isTargeted ? 150 : 10), 
+            transform: isTargeted ? 'scale(1.05)' : 'scale(1)', 
+            animation: isUnlinking ? 'shake 0.3s cubic-bezier(.36,.07,.19,.97) both' : 'none' 
+        }}
+        className={`absolute p-4 flex flex-col items-center justify-center text-center transition-all duration-300 ease-out rounded-full group 
+        ${borderClass}
+        ${isEditing ? 'select-text cursor-auto' : 'select-none'}
+        ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2' : 
+          (isTargeted ? 'ring-4 ring-indigo-300 ring-offset-2' : 
+            (isGrouped ? 'border-2 border-dashed border-indigo-400/50' : ''))}`}
     >
-        {mode === 'move' && !isEditing && !styleInfo.isMemo && (
-            <div className="absolute top-4 opacity-0 group-hover:opacity-100 transition-opacity w-full flex justify-center z-20 scale-75 pointer-events-auto">
+        {/* EDIT MODE: Color Picker (Top) */}
+        {isEditing && !styleInfo.isMemo && (
+            <div 
+                className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-white p-2 rounded-full shadow-lg border border-slate-200 z-50 flex gap-2 animate-in fade-in slide-in-from-bottom-2 pointer-events-auto"
+                onMouseDown={(e) => e.stopPropagation()}
+            >
                 <ColorPicker currentType={item.type} onChange={(config) => onChangeColor(item.id, config)} />
+            </div>
+        )}
+
+        {/* Connect Button Handle */}
+        {isEditing && (
+            <div 
+                className="absolute -right-6 top-1/2 transform -translate-y-1/2 bg-green-500 text-white p-2 rounded-full shadow-lg cursor-crosshair z-50 animate-in fade-in zoom-in hover:scale-110 transition-transform pointer-events-auto"
+                onMouseDown={(e) => onStartConnection(e, item.id)}
+                title="拖拽连线"
+            >
+                <LinkIcon size={16} />
             </div>
         )}
         
@@ -174,27 +273,49 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
                 <Check size={12} />
              </div>
         )}
+        
         <div className="flex-1 flex flex-col justify-center items-center w-full h-full relative z-10">
         {isEditing ? (
-            <textarea autoFocus className={`w-full h-full bg-transparent resize-none border-none focus:ring-0 text-center ${fontSize} font-bold text-gray-900 p-0 select-text leading-tight`} value={item.text} placeholder={styleInfo.isMemo ? "输入备注..." : ""} onChange={(e) => onUpdateText(item.id, e.target.value)} onBlur={() => setEditingId(null)} onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingId(null); } }} onMouseDown={(e) => e.stopPropagation()} />
+            <textarea 
+                autoFocus 
+                className={`w-full h-full bg-transparent resize-none border-none focus:ring-0 text-center ${fontSize} ${isMemo ? 'text-slate-700 font-medium' : 'text-gray-900 font-bold'} p-0 select-text leading-tight`} 
+                value={item.text} 
+                placeholder={styleInfo.isMemo ? "输入备注..." : ""} 
+                onChange={(e) => onUpdateText(item.id, e.target.value)} 
+                onKeyDown={(e) => { 
+                    if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingId(null); } 
+                }} 
+            />
         ) : (
             <>
-                <span className={`${styleInfo.isMemo ? 'font-medium text-gray-700' : 'font-bold text-gray-900'} ${fontSize} leading-tight break-words w-full px-2 select-none pointer-events-none drop-shadow-sm`}>{item.text}</span>
+                <span className={`${styleInfo.isMemo ? 'font-medium text-slate-700' : 'font-bold text-gray-900'} ${fontSize} leading-tight break-words w-full px-2 select-none pointer-events-none drop-shadow-sm`}>{item.text}</span>
                 {!styleInfo.isMemo && item.count > 0 && <span className="text-[10px] text-stone-600/80 mt-1 select-none pointer-events-none">Freq: {item.count}</span>}
             </>
         )}
         </div>
         
-        {/* Action Buttons (Bottom) */}
-        {!isEditing && (
+        {/* EDIT MODE: Action Buttons (Bottom) */}
+        {isEditing && (
             <div 
-                className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity z-50"
+                className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 flex gap-2 bg-white px-3 py-1.5 rounded-full shadow-lg border border-slate-200 z-50 animate-in fade-in slide-in-from-top-2 pointer-events-auto"
                 onMouseDown={(e) => e.stopPropagation()} 
             >
                 {item.groupId && ( 
-                    <button onClick={(e) => { e.stopPropagation(); onUnlink(item.id); }} className="bg-slate-500 text-white rounded-full p-1.5 shadow-sm hover:bg-slate-600 hover:scale-110 transition-transform" title="解绑"><Unlink size={14} /></button>
+                    <button 
+                        onClick={() => { onUnlink(item.id); setEditingId(null); }} 
+                        className="text-slate-500 hover:text-indigo-600 hover:bg-slate-100 p-1 rounded transition-colors flex items-center gap-1 text-xs font-bold whitespace-nowrap" 
+                        title="解绑"
+                    >
+                        <Unlink size={14} /> 解绑
+                    </button>
                 )}
-                <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} className="bg-red-500 text-white rounded-full p-1.5 shadow-sm hover:bg-red-600 hover:scale-110 transition-transform" title="删除"><Trash2 size={14} /></button>
+                <button 
+                    onClick={() => { onDelete(item.id); setEditingId(null); }} 
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors flex items-center gap-1 text-xs font-bold whitespace-nowrap" 
+                    title="删除"
+                >
+                    <Trash2 size={14} /> 删除
+                </button>
             </div>
         )}
         <style>{`@keyframes shake { 10%, 90% { transform: translate3d(-1px, 0, 0); } 20%, 80% { transform: translate3d(2px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-4px, 0, 0); } 40%, 60% { transform: translate3d(4px, 0, 0); } }`}</style>
@@ -202,33 +323,45 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
   );
 };
 
-const ConnectionOverlay = ({ connection, from, to, onDelete, onEdit, onUpdate, isEditing, setEditingConnId, offset, onMouseDownHandle }) => {
+const ConnectionOverlay = ({ connection, from, to, onDelete, offset, onMouseDownHandle, label, onDoubleClickEdit }) => {
+  if (!from || !to) return null;
   const curveData = getCurvePoints(from, to, offset);
+  const { width, height } = getLabelDimensions(label);
+
   return (
     <g className="group pointer-events-auto">
       <path d={curveData.path} stroke="transparent" strokeWidth="20" fill="none" />
       <g 
         transform={`translate(${curveData.labelX}, ${curveData.labelY})`}
         onMouseDown={(e) => onMouseDownHandle(e, connection.id, 'connectionHandle')}
+        // RE-ADDED: Double Click to Edit
+        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClickEdit(connection.id); }} 
         className="cursor-move"
       >
-          <circle cx="0" cy="0" r="45" fill="transparent" />
-          {isEditing ? (
-             <foreignObject x="-60" y="-15" width="120" height="30">
-                <input autoFocus className="w-full h-full px-2 text-center text-xs border border-indigo-300 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white/90" value={connection.label || ''} placeholder="输入关系..." onChange={(e) => onUpdate(connection.id, e.target.value)} onBlur={() => setEditingConnId(null)} onKeyDown={(e) => { if(e.key === 'Enter') setEditingConnId(null); }} onMouseDown={(e) => e.stopPropagation()} />
-             </foreignObject>
-          ) : (
-             <g className="cursor-pointer" onDoubleClick={(e) => { e.stopPropagation(); setEditingConnId(connection.id); }}>
-               <text y="4" textAnchor="middle" fontSize="12" fontWeight="bold" fill="#334155" className="select-none font-sans pointer-events-none drop-shadow-sm">{connection.label ? (connection.label.length > 8 ? connection.label.slice(0,7)+'..' : connection.label) : ''}</text>
-             </g>
-          )}
+          {/* Hit area matching the pill shape */}
+           {label ? (
+                 <rect 
+                    x={-width / 2}
+                    y={-height / 2}
+                    width={width}
+                    height={height}
+                    rx={height/2}
+                    fill="transparent"
+                 />
+            ) : (
+                <circle cx="0" cy="0" r="45" fill="transparent" />
+            )}
+          
+          <text y="4" textAnchor="middle" fontSize="12" fontWeight="bold" fill="#334155" className="select-none font-sans pointer-events-none drop-shadow-sm">
+             {label || ''}
+          </text>
       </g>
-      {!isEditing && (
-        <g className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={(e) => { e.stopPropagation(); onDelete(); }} transform={`translate(${curveData.labelX + 45}, ${curveData.labelY - 20})`}>
-            <circle r="9" fill="#ef4444" className="shadow-sm"/>
-            <path d="M-3 -3 L3 3 M3 -3 L-3 3" stroke="white" strokeWidth="1.5" />
-        </g>
-      )}
+      
+      {/* Delete Button (Hover) */}
+      <g className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={(e) => { e.stopPropagation(); onDelete(); }} transform={`translate(${curveData.labelX + width/2 + 10}, ${curveData.labelY - 20})`}>
+          <circle r="9" fill="#ef4444" className="shadow-sm"/>
+          <path d="M-3 -3 L3 3 M3 -3 L-3 3" stroke="white" strokeWidth="1.5" />
+      </g>
     </g>
   );
 };
@@ -239,24 +372,32 @@ export default function KJAnalysisBoard() {
   const [connections, setConnections] = useState([]);
   const [mode, setMode] = useState('move'); 
   const [statusMsg, setStatusMsg] = useState('');
+  const [boardName, setBoardName] = useState('未命名分析');
   const boardRef = useRef(null); 
   const contentRef = useRef(null); 
+  const fileInputRef = useRef(null);
   
   const [editingId, setEditingId] = useState(null);
   const [editingConnId, setEditingConnId] = useState(null);
   const [unlinkingId, setUnlinkingId] = useState(null); 
   const [isExporting, setIsExporting] = useState(false);
-
+  const [isPdfEngineReady, setIsPdfEngineReady] = useState(false);
+  
   const hoverTimeoutRef = useRef(null); 
   const hoverCandidateIdRef = useRef(null); 
   const longPressTimerRef = useRef(null); 
 
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [lassoPoints, setLassoPoints] = useState([]); 
+  const [isLassoing, setIsLassoing] = useState(false);
+  
   const [dragState, setDragState] = useState({ 
     id: null, type: null, startX: 0, startY: 0, 
     initItemX: 0, initItemY: 0,
     initOffset: {x:0, y:0},
     targetId: null, 
-    isConnecting: false, startConnId: null, currMouseX: 0, currMouseY: 0
+    isConnecting: false, startConnId: null, currMouseX: 0, currMouseY: 0,
+    initialPositions: {} 
   });
 
   useEffect(() => {
@@ -277,8 +418,16 @@ export default function KJAnalysisBoard() {
   }, []);
 
   const handleFileUpload = async (e) => {
+    if (!isPdfEngineReady) {
+        alert("PDF 引擎正在加载中，请稍候...");
+        return;
+    }
     const selectedFile = e.target.files[0];
-    if (selectedFile && selectedFile.type === 'application/pdf') processPDF(selectedFile);
+    if (selectedFile && selectedFile.type === 'application/pdf') {
+        const name = selectedFile.name.replace('.pdf', '');
+        setBoardName(name); 
+        processPDF(selectedFile);
+    }
   };
 
   const processPDF = async (pdfFile) => {
@@ -296,7 +445,7 @@ export default function KJAnalysisBoard() {
         const textContent = await page.getTextContent();
         fullText += textContent.items.map(item => item.str).join("") + "\n";
       }
-      setStatusMsg('正在进行多语言智能分词与行为识别...');
+      setStatusMsg('正在進行多語言智能分詞與行為識別...');
       await new Promise(r => setTimeout(r, 100));
       const extractedItems = smartExtractKeywords(fullText, 30);
       if (extractedItems.length === 0) throw new Error("未能提取到有效关键词");
@@ -309,6 +458,7 @@ export default function KJAnalysisBoard() {
       }));
 
       setItems(scatteredItems);
+      setConnections([]);
       setStep('board');
     } catch (err) {
       console.error(err);
@@ -318,21 +468,53 @@ export default function KJAnalysisBoard() {
   };
 
   const handleStartBlank = () => {
-    const initialMemo = {
-      id: `memo-${Date.now()}`,
-      text: "点击顶部按钮添加便签，或双击空白处",
-      count: 0,
-      type: 'memo',
-      color: POS_TYPES.MEMO.color,
-      borderColor: POS_TYPES.MEMO.borderColor,
-      strokeColor: POS_TYPES.MEMO.strokeColor,
-      gradientText: POS_TYPES.MEMO.gradientText,
-      x: 1000, 
-      y: 750,
-      groupId: null
-    };
+    const initialMemo = { id: `memo-${Date.now()}`, text: "点击顶部按钮添加便签，或双击空白处", count: 0, type: 'memo', color: POS_TYPES.MEMO.color, borderColor: POS_TYPES.MEMO.borderColor, strokeColor: POS_TYPES.MEMO.strokeColor, gradientText: POS_TYPES.MEMO.gradientText, x: 1000, y: 750, groupId: null };
     setItems([initialMemo]);
+    setConnections([]); 
     setStep('board');
+  };
+
+  // --- Save / Load Logic ---
+  const handleSaveToFile = () => {
+    const dateStr = new Date().toISOString().split('T')[0];
+    const data = { boardName, items, connections, date: Date.now() }; 
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${boardName}_${dateStr}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleLoadFromFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (parsed.items && Array.isArray(parsed.items)) {
+           setItems(parsed.items);
+           setConnections(parsed.connections || []);
+           if (parsed.boardName) setBoardName(parsed.boardName); 
+           setStep('board');
+        } else {
+           alert("文件格式不正确，无法读取");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("读取文件失败");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; 
+  };
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
   };
 
   const handleExport = async (format) => {
@@ -356,39 +538,78 @@ export default function KJAnalysisBoard() {
                   }
               }
           });
+          
+          const filename = `${boardName}_导出`; 
+
           if (format === 'png') {
-              const link = document.createElement('a'); link.download = `KJ-Analysis-${Date.now()}.png`; link.href = canvas.toDataURL('image/png'); link.click();
+              const link = document.createElement('a'); link.download = `${filename}.png`; link.href = canvas.toDataURL('image/png'); link.click();
           } else if (format === 'pdf' && window.jspdf) {
               const { jsPDF } = window.jspdf;
               const imgData = canvas.toDataURL('image/png');
               const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? 'l' : 'p', unit: 'px', format: [canvas.width, canvas.height] });
               pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-              pdf.save(`KJ-Analysis-${Date.now()}.pdf`);
+              pdf.save(`${filename}.pdf`);
           }
       } catch (err) { console.error("Export failed:", err); alert("导出失败，请重试"); } finally { setIsExporting(false); }
   };
 
-  const clearBoard = () => { if(confirm('确定要清空所有内容吗？')) { setItems([]); setConnections([]); setStep('upload'); } };
+  const clearBoard = () => { if(confirm('确定要清空所有内容吗？')) { setItems([]); setConnections([]); setBoardName('未命名分析'); setStep('upload'); } };
   const handleDeleteItem = (id) => { setItems(items.filter(i => i.id !== id)); setConnections(conn => conn.filter(c => c.fromId !== id && c.toId !== id)); };
   const handleUnlinkItem = (id) => { setUnlinkingId(id); setTimeout(() => { setItems(prev => prev.map(i => i.id === id ? { ...i, groupId: null } : i)); setUnlinkingId(null); }, 300); };
   const handleDeleteConnection = (id) => setConnections(prev => prev.filter(c => c.id !== id));
+  
   const handleUpdateConnectionLabel = (id, text) => { setConnections(prev => prev.map(c => c.id === id ? { ...c, label: text } : c)); };
   const handleColorChange = (id, config) => { setItems(items.map(i => i.id === id ? { ...i, color: config.color, borderColor: config.borderColor, strokeColor: config.strokeColor, gradientText: config.gradientText, type: config.id } : i)); };
   const handleUpdateText = (id, newText) => { setItems(items.map(i => i.id === id ? { ...i, text: newText } : i)); };
   
-  const handleAddNote = () => {
-    const newNote = { id: `manual-${Date.now()}`, text: "双击编辑", count: 0, type: 'noun', color: POS_TYPES.NOUN.color, borderColor: POS_TYPES.NOUN.borderColor, strokeColor: POS_TYPES.NOUN.strokeColor, gradientText: POS_TYPES.NOUN.gradientText, x: 300 + Math.random() * 50, y: 300 + Math.random() * 50, groupId: null };
+  const handleAddNote = (x, y) => {
+    const posX = x !== undefined ? x : 300 + Math.random() * 50;
+    const posY = y !== undefined ? y : 300 + Math.random() * 50;
+    const newNote = { id: `manual-${Date.now()}`, text: "双击编辑", count: 0, type: 'noun', color: POS_TYPES.NOUN.color, borderColor: POS_TYPES.NOUN.borderColor, strokeColor: POS_TYPES.NOUN.strokeColor, gradientText: POS_TYPES.NOUN.gradientText, x: posX, y: posY, groupId: null };
     setItems(prev => [...prev, newNote]);
   };
+
   const handleAddMemo = () => {
     const newMemo = { id: `memo-${Date.now()}`, text: "备注", count: 0, type: 'memo', color: POS_TYPES.MEMO.color, borderColor: POS_TYPES.MEMO.borderColor, strokeColor: POS_TYPES.MEMO.strokeColor, gradientText: POS_TYPES.MEMO.gradientText, x: 350 + Math.random() * 50, y: 350 + Math.random() * 50, groupId: null };
     setItems(prev => [...prev, newMemo]);
+  };
+
+  const handleStartConnection = (e, noteId) => {
+      e.stopPropagation();
+      e.preventDefault();
+      
+      const item = items.find(i => i.id === noteId);
+      if (!item) return;
+      
+      setDragState({
+          id: null, 
+          type: null,
+          isConnecting: true,
+          startConnId: noteId,
+          startX: e.clientX,
+          startY: e.clientY,
+          currMouseX: item.x + 72, 
+          currMouseY: item.y + (item.type === 'memo' ? 40 : 72),
+          initItemX: 0, initItemY: 0
+      });
   };
 
   const handleMouseDown = (e, id, type) => {
     e.stopPropagation();
     if(e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'TEXTAREA') return;
     if (editingId || editingConnId) { setEditingId(null); setEditingConnId(null); return; }
+    
+    // Board Selection Logic
+    if (type === 'board') {
+        const rect = boardRef.current.getBoundingClientRect();
+        const startX = e.clientX - rect.left + boardRef.current.scrollLeft;
+        const startY = e.clientY - rect.top + boardRef.current.scrollTop;
+        
+        setSelectedIds(new Set());
+        setIsLassoing(true);
+        setLassoPoints([{x: startX, y: startY}]);
+        return;
+    }
     
     if (type === 'connectionHandle') {
         e.preventDefault();
@@ -398,32 +619,61 @@ export default function KJAnalysisBoard() {
             id, type: 'connectionHandle',
             startX: e.clientX, startY: e.clientY,
             initOffset, 
-            initItemX: 0, initItemY: 0, targetId: null, isConnecting: false, startConnId: null, currMouseX: 0, currMouseY: 0
+            initItemX: 0, initItemY: 0, targetId: null, isConnecting: false, startConnId: null, currMouseX: 0, currMouseY: 0,
+            initialPositions: {}
         });
         return;
     }
 
-    if (mode === 'connect' && type === 'note') {
-      e.preventDefault();
-      setDragState({ isConnecting: true, startConnId: id, startX: e.clientX, startY: e.clientY, currMouseX: items.find(i=>i.id===id).x + 72, currMouseY: items.find(i=>i.id===id).y + 72, id: null, type: null, initItemX: 0, initItemY: 0 });
-      return;
-    }
     e.preventDefault(); 
     const item = items.find(i => i.id === id);
     if(!item) return;
-    if (item.groupId) {
+
+    // Multi-select Drag Logic
+    let initialPositions = {};
+    const newSelectedIds = new Set(selectedIds);
+    
+    if (newSelectedIds.has(id)) {
+        newSelectedIds.forEach(selId => {
+            const selItem = items.find(i => i.id === selId);
+            if (selItem) initialPositions[selId] = { x: selItem.x, y: selItem.y };
+        });
+    } else {
+        setSelectedIds(new Set([id]));
+        initialPositions[id] = { x: item.x, y: item.y };
+    }
+
+    if (item.groupId && newSelectedIds.size <= 1) {
         longPressTimerRef.current = setTimeout(() => { handleUnlinkItem(id); setDragState(prev => ({ ...prev, isDragging: false })); }, 800); 
     }
-    setDragState({ id, type, startX: e.clientX, startY: e.clientY, initItemX: item.x, initItemY: item.y, targetId: null, isDragging: true, isConnecting: false, startConnId: null, currMouseX: 0, currMouseY: 0 });
+
+    setDragState({
+      id, type,
+      startX: e.clientX, startY: e.clientY,
+      initItemX: item.x, initItemY: item.y,
+      targetId: null,
+      isDragging: true, isConnecting: false, startConnId: null, currMouseX: 0, currMouseY: 0,
+      initialPositions
+    });
   };
 
   const handleMouseMove = (e) => {
+    // 1. Update Lasso Selection
+    if (isLassoing) {
+        if (!boardRef.current) return;
+        const rect = boardRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left + boardRef.current.scrollLeft;
+        const y = e.clientY - rect.top + boardRef.current.scrollTop;
+        
+        setLassoPoints(prev => [...prev, {x, y}]);
+        return;
+    }
+
     if (dragState.type === 'connectionHandle') {
         const dx = e.clientX - dragState.startX;
         const dy = e.clientY - dragState.startY;
         const newOffsetX = dragState.initOffset.x + dx * 2;
         const newOffsetY = dragState.initOffset.y + dy * 2;
-        
         setConnections(prev => prev.map(c => c.id === dragState.id ? { ...c, controlOffset: { x: newOffsetX, y: newOffsetY } } : c));
         return;
     }
@@ -437,7 +687,23 @@ export default function KJAnalysisBoard() {
     if (!dragState.isDragging) return;
     const dx = e.clientX - dragState.startX; const dy = e.clientY - dragState.startY;
     if (longPressTimerRef.current && Math.hypot(dx, dy) > 5) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+    
     if (dragState.type === 'note') {
+      // Multi-Item Move
+      if (selectedIds.size > 1 && selectedIds.has(dragState.id)) {
+          setItems(prev => prev.map(item => {
+              if (selectedIds.has(item.id) && dragState.initialPositions[item.id]) {
+                  return {
+                      ...item,
+                      x: dragState.initialPositions[item.id].x + dx,
+                      y: dragState.initialPositions[item.id].y + dy
+                  };
+              }
+              return item;
+          }));
+          return; 
+      }
+
       const draggedItem = items.find(i => i.id === dragState.id);
       if (!draggedItem) return;
       if (draggedItem.groupId) {
@@ -450,7 +716,7 @@ export default function KJAnalysisBoard() {
       const candidate = items.find(i => {
           if (i.id === dragState.id || (draggedItem.groupId && i.groupId === draggedItem.groupId)) return false; 
           const iCenter = getCenter(i);
-          return Math.hypot(center.x - iCenter.x, center.y - iCenter.y) < 100; 
+          return Math.hypot(center.x - iCenter.x, center.y - iCenter.y) < 160; 
       });
       if (candidate) {
           if (hoverCandidateIdRef.current !== candidate.id) {
@@ -465,6 +731,29 @@ export default function KJAnalysisBoard() {
 
   const handleMouseUp = (e) => {
     clearTimeout(hoverTimeoutRef.current); hoverCandidateIdRef.current = null; clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null;
+    
+    // Finalize Lasso Selection
+    if (isLassoing) {
+        setIsLassoing(false);
+        const points = lassoPoints;
+        setLassoPoints([]);
+        
+        if (points.length > 2) {
+            const newSelected = new Set();
+            items.forEach(item => {
+                const center = getCenter(item);
+                const poly = points.map(p => [p.x, p.y]);
+                if (isPointInPolygon([center.x, center.y], poly)) {
+                    newSelected.add(item.id);
+                }
+            });
+            setSelectedIds(newSelected);
+        } else {
+            setSelectedIds(new Set());
+        }
+        return;
+    }
+
     if (dragState.isConnecting) {
         if (boardRef.current) {
           const boardRect = boardRef.current.getBoundingClientRect();
@@ -476,26 +765,36 @@ export default function KJAnalysisBoard() {
               return Math.hypot(cx - mouseX, cy - mouseY) < 60;
           });
           if (target) { 
-             const connectionExists = connections.some(c => (c.fromId === dragState.startConnId && c.toId === target.id) || (c.fromId === target.id && c.toId === dragState.startConnId));
-             if (!connectionExists) { setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x:0, y:0} }]); }
+             const existingCount = connections.filter(c => (c.fromId === dragState.startConnId && c.toId === target.id) || (c.fromId === target.id && c.toId === dragState.startConnId)).length;
+             const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
+             setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} }]); 
           }
         }
     }
     if (dragState.isDragging && dragState.type === 'note') {
+        if (selectedIds.size > 1 && selectedIds.has(dragState.id)) {
+            setDragState({ ...dragState, isDragging: false });
+            return;
+        }
+
         const item = items.find(i => i.id === dragState.id);
         if (item) {
-            const itemCenter = getCenter(item);
-            const targetConn = connections.find(conn => {
-                const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId); if (!from || !to) return false;
-                const midX = (from.x + 72 + to.x + 72) / 2; const midY = (from.y + 72 + to.y + 72) / 2;
-                return Math.hypot(midX - itemCenter.x, midY - itemCenter.y) < 60;
-            });
-            if (targetConn) {
-                setConnections(prev => prev.map(c => c.id === targetConn.id ? { ...c, label: item.text } : c));
-                setItems(prev => prev.filter(i => i.id !== item.id));
-                setDragState({ ...dragState, isDragging: false, isConnecting: false, id: null, startConnId: null, targetId: null });
-                return;
+            // Check for memo dropping on connection
+            if (item.type === 'memo') {
+                const itemCenter = getCenter(item);
+                const targetConn = connections.find(conn => {
+                    const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId); if (!from || !to) return false;
+                    const curveData = getCurvePoints(from, to, conn.controlOffset || {x:0,y:0});
+                    return Math.hypot(curveData.labelX - itemCenter.x, curveData.labelY - itemCenter.y) < 60;
+                });
+                if (targetConn) {
+                    setConnections(prev => prev.map(c => c.id === targetConn.id ? { ...c, label: item.text } : c));
+                    setItems(prev => prev.filter(i => i.id !== item.id));
+                    setDragState({ ...dragState, isDragging: false, isConnecting: false, id: null, startConnId: null, targetId: null });
+                    return;
+                }
             }
+
             if (dragState.targetId) {
                 const target = items.find(i => i.id === dragState.targetId);
                 if (target) {
@@ -516,28 +815,68 @@ export default function KJAnalysisBoard() {
     setDragState({ ...dragState, isDragging: false, isConnecting: false, id: null, startConnId: null, targetId: null, type: null });
   };
 
+  const handleBoardDoubleClick = (e) => {
+      if (e.target === e.currentTarget && mode === 'move') {
+          const rect = boardRef.current.getBoundingClientRect();
+          const x = e.clientX - rect.left + boardRef.current.scrollLeft;
+          const y = e.clientY - rect.top + boardRef.current.scrollTop;
+          handleAddNote(x - 72, y - 72); 
+      }
+  };
+
+  // Helper to generate SVG path for lasso
+  const getLassoPath = () => {
+      if (lassoPoints.length < 2) return "";
+      let path = `M ${lassoPoints[0].x} ${lassoPoints[0].y}`;
+      for (let i = 1; i < lassoPoints.length; i++) {
+          path += ` L ${lassoPoints[i].x} ${lassoPoints[i].y}`;
+      }
+      return path + " Z"; // Close path
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-stone-50 font-sans text-slate-800 overflow-hidden">
+    <div className="flex flex-col h-screen bg-stone-50 font-sans text-slate-800 overflow-hidden" onMouseDown={() => { if (editingId || editingConnId) { setEditingId(null); setEditingConnId(null); } }}>
+      {/* Hidden file input for import */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleLoadFromFile} 
+        accept=".json" 
+        className="hidden" 
+      />
+
       <GooeyFilters />
+      
       {/* Header */}
       <header className="h-16 bg-white border-b border-stone-200 flex items-center px-4 justify-between shadow-sm z-50 shrink-0 relative no-export">
         <div className="flex items-center gap-2">
           <BrainCircuit className="text-indigo-600" />
-          <h1 className="text-lg font-bold tracking-tight text-slate-800 hidden sm:block">KJ法智能白板 <span className="text-xs font-normal text-slate-400">Pro</span></h1>
+          {step === 'board' ? (
+             <input
+                type="text"
+                value={boardName}
+                onChange={(e) => setBoardName(e.target.value)}
+                className="text-lg font-bold tracking-tight text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none w-80 transition-all px-1"
+                title="点击修改画板名称"
+            />
+          ) : (
+             <h1 className="text-lg font-bold tracking-tight text-slate-800 hidden sm:block">KJ法智能白板 <span className="text-xs font-normal text-slate-400">Pro</span></h1>
+          )}
         </div>
         {step === 'board' && (
           <div className="flex items-center gap-2">
-             <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 mr-2">
-                <button onClick={() => setMode('move')} className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'move' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}><MousePointer2 size={16} /> 移动</button>
-                <button onClick={() => setMode('connect')} className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'connect' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}><LinkIcon size={16} /> 连线</button>
+             <div className="flex items-center gap-1 border-r border-slate-200 pr-2 mr-2">
+                 <button onClick={handleSaveToFile} className="flex items-center gap-1 px-2 py-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded text-xs font-medium transition-colors" title="保存数据 (.json)"><Save size={16}/> 另存数据</button>
+                 <button onClick={triggerFileInput} className="flex items-center gap-1 px-2 py-1.5 text-slate-600 hover:bg-slate-100 rounded text-xs font-medium transition-colors" title="读取数据 (.json)"><Upload size={16}/> 读取</button>
              </div>
              
+             {/* Export Buttons */}
              <div className="flex items-center gap-1 mr-2 border-l border-slate-200 pl-2">
                 <button onClick={() => handleExport('png')} disabled={isExporting} className="flex items-center gap-1 px-2 py-1.5 text-slate-600 hover:bg-slate-100 rounded text-xs font-medium transition-colors" title="导出为PNG"><ImageIcon size={16}/> PNG</button>
                 <button onClick={() => handleExport('pdf')} disabled={isExporting} className="flex items-center gap-1 px-2 py-1.5 text-slate-600 hover:bg-slate-100 rounded text-xs font-medium transition-colors" title="导出为PDF"><FileType size={16}/> PDF</button>
              </div>
 
-             <button onClick={handleAddNote} className="flex items-center gap-1 px-3 py-1.5 bg-yellow-100 border border-yellow-300 text-yellow-800 rounded hover:bg-yellow-200 text-sm font-medium transition-colors shadow-sm"><Plus size={16} /></button>
+             <button onClick={() => handleAddNote()} className="flex items-center gap-1 px-3 py-1.5 bg-yellow-100 border border-yellow-300 text-yellow-800 rounded hover:bg-yellow-200 text-sm font-medium transition-colors shadow-sm"><Plus size={16} /></button>
              <button onClick={handleAddMemo} className="flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded hover:bg-slate-50 text-sm font-medium transition-colors shadow-sm"><MemoIcon size={16} /></button>
              <button onClick={clearBoard} className="flex items-center gap-1 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded text-sm transition-colors"><Trash2 size={16} /></button>
           </div>
@@ -560,12 +899,39 @@ export default function KJAnalysisBoard() {
               <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6 text-indigo-600 ring-4 ring-indigo-50"><FileText size={32} /></div>
               <h2 className="text-xl font-bold mb-2">开始你的 KJ 法分析</h2>
               <p className="text-stone-500 mb-6 text-sm px-4">支持 <strong>中文 / 日语 / 英语</strong> 文献。<br/>上传 PDF，智能提取<b>行为、体验与对象</b>。</p>
+              
               <label className="block w-full cursor-pointer group">
                 <input type="file" accept="application/pdf" onChange={handleFileUpload} className="hidden" />
-                <div className="border-2 border-dashed border-indigo-300 rounded-lg p-6 group-hover:bg-indigo-50 group-hover:border-indigo-500 transition-all"><span className="text-indigo-600 font-medium">点击上传 PDF</span></div>
+                <div className="border-2 border-dashed border-indigo-300 rounded-lg p-6 group-hover:bg-indigo-50 group-hover:border-indigo-500 transition-all">
+                    <span className="text-indigo-600 font-medium">
+                        {isPdfEngineReady ? "点击上传 PDF" : (
+                            <span className="flex items-center gap-2">
+                                <RefreshCw className="animate-spin" size={16}/> 引擎加载中...
+                            </span>
+                        )}
+                    </span>
+                </div>
               </label>
+              
               <div className="flex items-center gap-4 my-6 w-full"><div className="h-px bg-slate-200 flex-1"></div><span className="text-slate-400 text-sm">或</span><div className="h-px bg-slate-200 flex-1"></div></div>
-              <button onClick={handleStartBlank} className="w-full py-3 bg-white border-2 border-slate-200 text-slate-600 font-bold rounded-lg hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center gap-2"><Layout size={20} />从空白画板开始</button>
+              
+              <div className="flex flex-col gap-3 w-full">
+                  <button 
+                    onClick={handleStartBlank}
+                    className="w-full py-3 bg-white border-2 border-slate-200 text-slate-600 font-bold rounded-lg hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Layout size={20} />
+                    从空白画板开始
+                  </button>
+
+                  <button 
+                    onClick={triggerFileInput}
+                    className="w-full py-3 bg-indigo-50 border-2 border-indigo-200 text-indigo-700 font-bold rounded-lg hover:bg-indigo-100 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Upload size={20} />
+                    打开存档文件 (.json)
+                  </button>
+              </div>
             </div>
           </div>
         )}
@@ -581,30 +947,73 @@ export default function KJAnalysisBoard() {
           <div 
             ref={contentRef}
             id="kj-board-canvas"
-            className={`w-[2400px] h-[1600px] relative bg-stone-100 ${mode === 'connect' ? 'cursor-crosshair' : 'cursor-default'}`}
+            className={`w-[2400px] h-[1600px] relative bg-stone-100 cursor-default`}
             style={{backgroundImage: 'radial-gradient(#cbd5e1 1.5px, transparent 1.5px)', backgroundSize: '24px 24px'}}
-            onDoubleClick={(e) => { if(e.target === e.currentTarget && mode === 'move') handleAddNote(); }}
+            onDoubleClick={handleBoardDoubleClick}
+            onMouseDown={(e) => handleMouseDown(e, null, 'board')} 
           >
              {/* Gooey Layer */}
              <div className="absolute inset-0 pointer-events-none z-0" style={{ filter: 'url(#goo)' }}>
                 <svg className="absolute inset-0 w-full h-full overflow-visible">
                     {connections.map(conn => {
                         const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId);
+                        if (!from || !to) return null; // Safe check to prevent crash
                         const fromColor = from ? (from.gradientText || 'text-slate-400') : 'text-slate-400';
                         const toColor = to ? (to.gradientText || 'text-slate-400') : 'text-slate-400';
-                        return <GooeyLine key={`goo-conn-${conn.id}`} id={conn.id} from={getCenter(from)} to={getCenter(to)} fromColor={fromColor} toColor={toColor} offset={conn.controlOffset || {x:0,y:0}} />;
+                        return <GooeyLine key={`goo-conn-${conn.id}`} id={conn.id} from={getCenter(from)} to={getCenter(to)} fromColor={fromColor} toColor={toColor} offset={conn.controlOffset || {x:0,y:0}} label={conn.label} />;
                     })}
                     {dragState.isConnecting && dragState.startConnId && items.find(i=>i.id === dragState.startConnId) && (
-                        <line x1={items.find(i=>i.id === dragState.startConnId).x + 72} y1={items.find(i=>i.id === dragState.startConnId).y + (items.find(i=>i.id === dragState.startConnId).type==='memo'?40:72)} x2={dragState.currMouseX} y2={dragState.currMouseY} stroke="currentColor" strokeWidth="24" strokeLinecap="round" className="stroke-indigo-300 opacity-80" />
+                        <line x1={items.find(i=>i.id === dragState.startConnId).x + 72} y1={items.find(i=>i.id === dragState.startConnId).y + (items.find(i=>i.id === dragState.startConnId).type==='memo'?40:72)} x2={dragState.currMouseX} y2={dragState.currMouseY} stroke="currentColor" strokeWidth="18" strokeLinecap="round" className="stroke-indigo-300 opacity-80" />
                     )}
                 </svg>
-                {items.map(item => <BlobBackground key={`blob-${item.id}`} item={item} />)}
+                {/* FILTER OUT MEMOS: Memos are rendered separately outside gooey layer */}
+                {items.filter(item => item.type !== 'memo').map(item => (
+                    <BlobBackground key={`blob-${item.id}`} item={item} />
+                ))}
              </div>
+
+             {/* Memo Background Layer (Outside Gooey) */}
+             {items.filter(item => item.type === 'memo').map(item => (
+                <MemoBackground key={`memo-bg-${item.id}`} item={item} />
+             ))}
              
-             {/* Interaction Layer */}
+             {/* Interaction Layer - RENDER INPUTS IN ABSOLUTE DIVS, NOT SVG */}
+             {editingConnId && (() => {
+                const conn = connections.find(c => c.id === editingConnId);
+                if (!conn) return null;
+                const from = items.find(i => i.id === conn.fromId);
+                const to = items.find(i => i.id === conn.toId);
+                if (!from || !to) return null;
+                const curveData = getCurvePoints(from, to, conn.controlOffset || {x:0,y:0});
+                
+                return (
+                    <div 
+                        className="absolute z-[1000]"
+                        style={{ 
+                            left: curveData.labelX, 
+                            top: curveData.labelY,
+                            transform: 'translate(-50%, -50%)' 
+                        }}
+                    >
+                        <input
+                            autoFocus
+                            className="w-32 px-2 py-1 text-center text-xs border border-indigo-500 rounded shadow-lg focus:outline-none bg-white select-text pointer-events-auto"
+                            value={conn.label || ''}
+                            placeholder="输入关系..."
+                            onChange={(e) => handleUpdateConnectionLabel(conn.id, e.target.value)}
+                            onBlur={() => setEditingConnId(null)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setEditingConnId(null); }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                        />
+                    </div>
+                );
+             })()}
+
              <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-0 overflow-visible">
                 {connections.map(conn => {
                     const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId); if(!from || !to) return null;
+                    // Don't render overlay if editing (input is rendered above)
+                    if (editingConnId === conn.id) return null;
                     return <ConnectionOverlay 
                         key={conn.id} 
                         connection={conn} 
@@ -614,15 +1023,45 @@ export default function KJAnalysisBoard() {
                         onDelete={() => handleDeleteConnection(conn.id)} 
                         onEdit={() => setEditingConnId(conn.id)} 
                         onUpdate={handleUpdateConnectionLabel} 
-                        isEditing={editingConnId === conn.id} 
+                        isEditing={false}
                         setEditingConnId={setEditingConnId} 
                         onMouseDownHandle={handleMouseDown}
+                        onDoubleClickEdit={setEditingConnId} // Pass down
+                        label={conn.label} 
                     />;
                 })}
              </svg>
+             
+             {/* Lasso Selection Render */}
+             {isLassoing && (
+                <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-50">
+                    <path 
+                        d={getLassoPath()} 
+                        stroke="#6366f1" 
+                        strokeWidth="2" 
+                        fill="rgba(99, 102, 241, 0.1)" 
+                        strokeDasharray="4"
+                    />
+                </svg>
+             )}
 
              {items.map(item => (
-               <StickyNote key={item.id} item={item} mode={mode} onMouseDown={handleMouseDown} onDelete={handleDeleteItem} onUnlink={handleUnlinkItem} onChangeColor={handleColorChange} onUpdateText={handleUpdateText} isSelected={dragState.id === item.id || dragState.startConnId === item.id} isTargeted={dragState.targetId === item.id} isEditing={editingId === item.id} setEditingId={setEditingId} isUnlinking={unlinkingId === item.id} />
+               <StickyNote 
+                key={item.id} 
+                item={item} 
+                // Removed 'mode' since we don't switch modes anymore
+                onMouseDown={handleMouseDown}
+                onUpdateText={handleUpdateText} 
+                isSelected={selectedIds.has(item.id) || dragState.id === item.id || dragState.startConnId === item.id} 
+                isTargeted={dragState.targetId === item.id} 
+                isEditing={editingId === item.id} 
+                setEditingId={setEditingId} 
+                isUnlinking={unlinkingId === item.id} 
+                onDelete={handleDeleteItem}
+                onChangeColor={handleColorChange}
+                onUnlink={handleUnlinkItem}
+                onStartConnection={handleStartConnection} 
+               />
              ))}
           </div>
         )}
