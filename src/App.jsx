@@ -1,9 +1,25 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette, Download, MessageSquare, Undo2, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette, Download, MessageSquare, Undo2, RefreshCw, Scaling } from 'lucide-react';
 
 // NOTE: External Libraries injected dynamically via CDN
 const HTML2CANVAS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
 const JSPDF_CDN = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+
+// --- Custom Logo Component ---
+const AppLogo = () => {
+    const [imgError, setImgError] = useState(false);
+    if (imgError) {
+        return (
+             <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-indigo-600">
+                <rect x="5" y="5" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="2.5" />
+                <rect x="17" y="17" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="2.5" />
+                <path d="M15 10H22C23.1 10 24 10.9 24 12V17" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M10 15V22C10 23.1 10.9 24 12 24H17" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        );
+    }
+    return <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" onError={() => setImgError(true)} />;
+};
 
 // --- Configuration ---
 const POS_TYPES = {
@@ -16,7 +32,20 @@ const POS_TYPES = {
   MEMO: { id: 'memo', label: '备注', color: 'bg-white/60 backdrop-blur-md shadow-sm', borderColor: 'border-slate-300', strokeColor: 'stroke-slate-200', gradientText: 'text-slate-200' }, 
 };
 
-const getNoteStyle = (text, type) => {
+const getNoteStyle = (text, type, customWidth, customHeight) => {
+  if (type === 'image') {
+      const w = customWidth || 200;
+      const h = customHeight || 200;
+      return { 
+          width: `${w}px`, 
+          height: `${h}px`, 
+          widthVal: w, 
+          heightVal: h, 
+          fontSize: 'text-sm', 
+          isImage: true 
+      };
+  }
+
   const isMemo = type === 'memo';
   const len = text ? text.length : 0;
   if (isMemo) {
@@ -36,7 +65,7 @@ const getNoteStyle = (text, type) => {
 
 const getCenter = (item) => {
     if (!item) return { x: 0, y: 0 }; 
-    const style = getNoteStyle(item.text, item.type);
+    const style = getNoteStyle(item.text, item.type, item.width, item.height);
     return { x: item.x + style.widthVal / 2, y: item.y + style.heightVal / 2 };
 };
 
@@ -96,7 +125,7 @@ const GooeyFilters = () => (
 
 const BlobBackground = ({ item }) => {
     const style = getNoteStyle(item.text, item.type);
-    if (item.type === 'memo') return null; 
+    if (item.type === 'memo' || item.type === 'image') return null; 
     return (
         <div className={`absolute rounded-full transition-all duration-300 ease-out ${item.color}`} style={{ left: item.x, top: item.y, width: style.width, height: style.height }} />
     );
@@ -105,6 +134,7 @@ const BlobBackground = ({ item }) => {
 const MemoBackground = ({ item }) => {
     const style = getNoteStyle(item.text, item.type);
     return (
+        // Explicitly set Z-Index to 5 to be above images (2) but below text (10)
         <div 
             className={`absolute rounded-full transition-all duration-300 ease-out ${item.color}`} 
             style={{ 
@@ -112,6 +142,7 @@ const MemoBackground = ({ item }) => {
                 top: item.y, 
                 width: style.width, 
                 height: style.height,
+                zIndex: 5 
             }} 
         />
     );
@@ -156,23 +187,34 @@ const GooeyLine = ({ id, from, to, fromColor, toColor, offset, label }) => {
     );
 };
 
-const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, onUnlink, onStartConnection, isSelected, isTargeted, mode, isEditing, setEditingId, isUnlinking }) => {
+const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, onUnlink, onStartConnection, onResizeStart, isSelected, isTargeted, mode, isEditing, setEditingId, isUnlinking }) => {
   if (!item) return null;
   const isMemo = item.type === 'memo';
+  const isImage = item.type === 'image';
   const isGrouped = !!item.groupId;
-  const styleInfo = getNoteStyle(item.text, item.type);
+  const styleInfo = getNoteStyle(item.text, item.type, item.width, item.height);
   const { fontSize } = styleInfo;
   
-  const borderClass = isMemo ? `border ${item.borderColor}` : '';
+  const shapeClass = isImage ? 'rounded-lg' : 'rounded-full';
+  
+  const borderClass = isMemo ? `border ${item.borderColor}` : (isImage ? 'border-none' : '');
+  const bgClass = isImage ? '' : ''; 
+
+  // --- Z-INDEX STRATEGY ---
+  // Level 1: Images (2) -> Background
+  // Level 2: Gooey Layer / Memo Backgrounds (5) -> Middle
+  // Level 3: Text Content (10) -> Foreground
+  // Interaction: Dragging/Editing pops to 300
+  let zIndex = 10; 
+  if (isImage) zIndex = 2; // Images sit below notes
+  
+  if (isTargeted) zIndex = 150;
+  if (isSelected || isEditing) zIndex = 300;
 
   return (
     <div
         onMouseDown={(e) => { 
-            if (isEditing) { 
-                e.stopPropagation(); 
-            } else { 
-                onMouseDown(e, item.id, 'note'); 
-            } 
+            if (isEditing) { e.stopPropagation(); } else { onMouseDown(e, item.id, 'note'); } 
         }}
         onDoubleClick={(e) => { 
             e.stopPropagation(); 
@@ -184,18 +226,20 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
             width: styleInfo.width, 
             height: styleInfo.height, 
             cursor: isEditing ? 'auto' : 'move', 
-            zIndex: isSelected || isEditing ? 300 : (isTargeted ? 150 : 10), 
+            zIndex: zIndex, 
             transform: isTargeted ? 'scale(1.05)' : 'scale(1)', 
             animation: isUnlinking ? 'shake 0.3s cubic-bezier(.36,.07,.19,.97) both' : 'none' 
         }}
-        className={`absolute p-4 flex flex-col items-center justify-center text-center transition-all duration-300 ease-out rounded-full group 
-        ${borderClass}
+        className={`absolute flex flex-col items-center justify-center text-center transition-all duration-300 ease-out group 
+        ${shapeClass} ${borderClass} ${bgClass}
+        ${!isImage && 'p-4'} 
         ${isEditing ? 'select-text cursor-auto' : 'select-none'}
         ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2' : 
           (isTargeted ? 'ring-4 ring-indigo-300 ring-offset-2' : 
             (isGrouped ? 'border-2 border-dashed border-indigo-400/50' : ''))}`}
     >
-        {isEditing && !styleInfo.isMemo && (
+        {/* EDIT MODE: Color Picker (Top) - Only for standard notes */}
+        {isEditing && !isMemo && !isImage && (
             <div 
                 className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-white p-2 rounded-full shadow-lg border border-slate-200 z-50 flex gap-2 animate-in fade-in slide-in-from-bottom-2 pointer-events-auto"
                 onMouseDown={(e) => e.stopPropagation()}
@@ -204,6 +248,7 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
             </div>
         )}
 
+        {/* Connect Button Handle */}
         {isEditing && (
             <div 
                 className="absolute -right-6 top-1/2 transform -translate-y-1/2 bg-green-500 text-white p-2 rounded-full shadow-lg cursor-crosshair z-50 animate-in fade-in zoom-in hover:scale-110 transition-transform pointer-events-auto"
@@ -214,31 +259,51 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
             </div>
         )}
         
+        {/* Image Resize Handle */}
+        {isImage && isEditing && (
+            <div 
+                className="absolute -right-3 -bottom-3 bg-indigo-500 text-white p-1.5 rounded-full shadow-lg cursor-se-resize z-50 animate-in fade-in pointer-events-auto hover:scale-110"
+                onMouseDown={(e) => onResizeStart(e, item.id)}
+                title="调整大小"
+            >
+                <Scaling size={14} />
+            </div>
+        )}
+        
         {isTargeted && (
              <div className="absolute -right-2 -bottom-2 bg-indigo-600 text-white rounded-full p-1 shadow animate-bounce z-50">
                 <Check size={12} />
              </div>
         )}
         
-        <div className="flex-1 flex flex-col justify-center items-center w-full h-full relative z-10">
-        {isEditing ? (
-            <textarea 
-                autoFocus 
-                className={`w-full h-full bg-transparent resize-none border-none focus:ring-0 text-center ${fontSize} ${isMemo ? 'text-slate-700 font-medium' : 'text-gray-900 font-bold'} p-0 select-text leading-tight`} 
-                value={item.text} 
-                placeholder={styleInfo.isMemo ? "" : ""} 
-                onChange={(e) => onUpdateText(item.id, e.target.value)} 
-                onKeyDown={(e) => { 
-                    if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingId(null); } 
-                }} 
-                onMouseDown={(e) => e.stopPropagation()} 
-            />
-        ) : (
-            <>
-                <span className={`${styleInfo.isMemo ? 'font-medium text-slate-700' : 'font-bold text-gray-900'} ${fontSize} leading-tight break-words w-full px-2 select-none pointer-events-none drop-shadow-sm`}>{item.text}</span>
-                {!styleInfo.isMemo && item.count > 0 && <span className="text-[10px] text-stone-600/80 mt-1 select-none pointer-events-none">Freq: {item.count}</span>}
-            </>
-        )}
+        {/* CONTENT AREA */}
+        <div className="flex-1 flex flex-col justify-center items-center w-full h-full relative z-10 overflow-hidden">
+            {isImage ? (
+                <img 
+                    src={item.imageUrl} 
+                    alt="Uploaded" 
+                    className="w-full h-full object-cover rounded-lg shadow-sm pointer-events-none" 
+                />
+            ) : (
+                isEditing ? (
+                    <textarea 
+                        autoFocus 
+                        className={`w-full h-full bg-transparent resize-none border-none focus:ring-0 text-center ${fontSize} ${isMemo ? 'text-slate-700 font-medium' : 'text-gray-900 font-bold'} p-0 select-text leading-tight`} 
+                        value={item.text} 
+                        placeholder={styleInfo.isMemo ? "" : ""} 
+                        onChange={(e) => onUpdateText(item.id, e.target.value)} 
+                        onKeyDown={(e) => { 
+                            if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingId(null); } 
+                        }} 
+                        onMouseDown={(e) => e.stopPropagation()} 
+                    />
+                ) : (
+                    <>
+                        <span className={`${styleInfo.isMemo ? 'font-medium text-slate-700' : 'font-bold text-gray-900'} ${fontSize} leading-tight break-words w-full px-2 select-none pointer-events-none drop-shadow-sm`}>{item.text}</span>
+                        {!styleInfo.isMemo && item.count > 0 && <span className="text-[10px] text-stone-600/80 mt-1 select-none pointer-events-none">Freq: {item.count}</span>}
+                    </>
+                )
+            )}
         </div>
         
         {/* EDIT MODE: Action Buttons (Bottom) */}
@@ -258,6 +323,7 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
                 <button 
                     onClick={() => { onDelete(item.id); setEditingId(null); }} 
                     className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors flex items-center gap-1" 
+                    title="删除"
                 >
                     <Trash2 size={16} />
                 </button>
@@ -316,11 +382,8 @@ export default function KJAnalysisBoard() {
   const boardRef = useRef(null); 
   const contentRef = useRef(null); 
   const fileInputRef = useRef(null);
+  const imageInputRef = useRef(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
-  
-  // History State
-  const [history, setHistory] = useState([]);
-  const snapshotRef = useRef(null);
   
   const [editingId, setEditingId] = useState(null);
   const [editingConnId, setEditingConnId] = useState(null);
@@ -344,6 +407,10 @@ export default function KJAnalysisBoard() {
     isConnecting: false, startConnId: null, currMouseX: 0, currMouseY: 0,
     initialPositions: {} 
   });
+  
+  // History
+  const [history, setHistory] = useState([]);
+  const snapshotRef = useRef(null);
 
   useEffect(() => {
     // Only export libs needed now
@@ -379,19 +446,17 @@ export default function KJAnalysisBoard() {
       setConnections(lastState.connections || []);
   };
 
-  // --- Keyboard Shortcuts ---
+  // --- Keyboard Shortcuts & Paste ---
   useEffect(() => {
     const handleKeyDown = (e) => {
         if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 
-        // Undo
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
             e.preventDefault();
             handleUndo();
             return;
         }
 
-        // DELETE / BACKSPACE
         if (e.key === 'Delete' || e.key === 'Backspace') {
             if (selectedIds.size > 0) {
                 saveToHistory(items, connections);
@@ -401,7 +466,6 @@ export default function KJAnalysisBoard() {
             }
         }
 
-        // L Key Logic
         if (e.key.toLowerCase() === 'l') {
             if (selectedIds.size === 2) {
                 const ids = Array.from(selectedIds);
@@ -412,24 +476,18 @@ export default function KJAnalysisBoard() {
                 const existingCount = connections.filter(c => (c.fromId === fromId && c.toId === toId) || (c.fromId === toId && c.toId === fromId)).length;
                 const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
                 setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: fromId, toId: toId, label: "", controlOffset: {x: shift, y: shift} }]);
-            }
-            else if (selectedIds.size === 1) {
+            } else if (selectedIds.size === 1) {
                 const fromId = Array.from(selectedIds)[0];
                 const item = items.find(i => i.id === fromId);
-                if (item && boardRef.current) {
-                    const rect = boardRef.current.getBoundingClientRect();
-                    const mouseX = mousePosRef.current.x - rect.left + boardRef.current.scrollLeft;
-                    const mouseY = mousePosRef.current.y - rect.top + boardRef.current.scrollTop;
+                if (item && contentRef.current) {
+                    const rect = contentRef.current.getBoundingClientRect();
+                    const mouseX = mousePosRef.current.x - rect.left;
+                    const mouseY = mousePosRef.current.y - rect.top;
                     
                     setDragState({
-                        id: null,
-                        type: null,
-                        isConnecting: true,
-                        startConnId: fromId,
-                        startX: mousePosRef.current.x, 
-                        startY: mousePosRef.current.y,
-                        currMouseX: mouseX,
-                        currMouseY: mouseY,
+                        id: null, type: null, isConnecting: true, startConnId: fromId,
+                        startX: mousePosRef.current.x, startY: mousePosRef.current.y,
+                        currMouseX: mouseX, currMouseY: mouseY,
                         initItemX: 0, initItemY: 0
                     });
                 }
@@ -437,9 +495,73 @@ export default function KJAnalysisBoard() {
         }
     };
 
+    const handlePaste = (e) => {
+        if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  
+        const clipboardItems = (e.clipboardData || e.originalEvent.clipboardData).items;
+        let blob = null;
+  
+        for (let i = 0; i < clipboardItems.length; i++) {
+          if (clipboardItems[i].type.indexOf("image") === 0) {
+            blob = clipboardItems[i].getAsFile();
+            break;
+          }
+        }
+  
+        if (blob) {
+          e.preventDefault();
+          processAndAddImage(blob);
+        }
+      };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('paste', handlePaste);
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('paste', handlePaste);
+    };
   }, [selectedIds, items, connections, history]); 
+
+  // --- Image Helpers ---
+  const processAndAddImage = (file) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+            const maxSize = 300; 
+            let w = img.width;
+            let h = img.height;
+            if (w > h) {
+                if (w > maxSize) { h = Math.round(h * (maxSize / w)); w = maxSize; }
+            } else {
+                if (h > maxSize) { w = Math.round(w * (maxSize / h)); h = maxSize; }
+            }
+            
+            saveToHistory(items, connections);
+            const pos = getViewportCenter();
+            const newImage = { 
+                id: `img-${Date.now()}`, 
+                type: 'image', 
+                imageUrl: event.target.result, 
+                width: w, 
+                height: h,
+                x: pos.x - w/2, 
+                y: pos.y - h/2,
+                groupId: null 
+            };
+            setItems(prev => [...prev, newImage]);
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    processAndAddImage(file);
+    e.target.value = '';
+  };
 
   const handleSaveToFile = () => {
     const dateStr = new Date().toISOString().split('T')[0];
@@ -468,7 +590,7 @@ export default function KJAnalysisBoard() {
            setConnections(parsed.connections || []);
            if (parsed.boardName) setBoardName(parsed.boardName); 
         } else {
-           alert("文件格式不正确，无法读取");
+           alert("文件格式不正确");
         }
       } catch (err) {
         console.error(err);
@@ -482,6 +604,10 @@ export default function KJAnalysisBoard() {
   const triggerFileInput = () => {
     fileInputRef.current?.click();
   };
+
+  const triggerImageInput = () => {
+      imageInputRef.current?.click();
+  }
 
   const handleExport = async (format) => {
       setShowExportMenu(false);
@@ -520,44 +646,17 @@ export default function KJAnalysisBoard() {
       } catch (err) { console.error("Export failed:", err); alert("导出失败，请重试"); } finally { setIsExporting(false); }
   };
 
-  const clearBoard = () => { 
-      if(confirm('确定要清空所有内容吗？')) { 
-          saveToHistory(items, connections);
-          setItems([]); 
-          setConnections([]); 
-          setBoardName('未命名分析'); 
-      } 
-  };
-
-  const handleDeleteItem = (id) => { 
-      saveToHistory(items, connections);
-      setItems(items.filter(i => i.id !== id)); 
-      setConnections(conn => conn.filter(c => c.fromId !== id && c.toId !== id)); 
-  };
-  
-  const handleUnlinkItem = (id) => { 
-      saveToHistory(items, connections);
-      setUnlinkingId(id); 
-      setTimeout(() => { 
-          setItems(prev => prev.map(i => i.id === id ? { ...i, groupId: null } : i)); 
-          setUnlinkingId(null); 
-      }, 300); 
-  };
-  
-  const handleDeleteConnection = (id) => { 
-      saveToHistory(items, connections);
-      setConnections(prev => prev.filter(c => c.id !== id)); 
-  };
+  const clearBoard = () => { if(confirm('确定要清空所有内容吗？')) { saveToHistory(items, connections); setItems([]); setConnections([]); setBoardName('未命名分析'); } };
+  const handleDeleteItem = (id) => { saveToHistory(items, connections); setItems(items.filter(i => i.id !== id)); setConnections(conn => conn.filter(c => c.fromId !== id && c.toId !== id)); };
+  const handleUnlinkItem = (id) => { saveToHistory(items, connections); setUnlinkingId(id); setTimeout(() => { setItems(prev => prev.map(i => i.id === id ? { ...i, groupId: null } : i)); setUnlinkingId(null); }, 300); };
+  const handleDeleteConnection = (id) => { saveToHistory(items, connections); setConnections(prev => prev.filter(c => c.id !== id)); };
   
   const handleUpdateConnectionLabel = (id, text) => { setConnections(prev => prev.map(c => c.id === id ? { ...c, label: text } : c)); };
-  
-  const handleColorChange = (id, config) => { 
-      saveToHistory(items, connections);
-      setItems(items.map(i => i.id === id ? { ...i, color: config.color, borderColor: config.borderColor, strokeColor: config.strokeColor, gradientText: config.gradientText, type: config.id } : i)); 
-  };
-  
+  const handleColorChange = (id, config) => { saveToHistory(items, connections); setItems(items.map(i => i.id === id ? { ...i, color: config.color, borderColor: config.borderColor, strokeColor: config.strokeColor, gradientText: config.gradientText, type: config.id } : i)); };
   const handleUpdateText = (id, newText) => { setItems(items.map(i => i.id === id ? { ...i, text: newText } : i)); };
   
+  // FIX: Get center relative to content board using contentRef
+  // IMPORTANT: Reverting to boardRef scroll logic because contentRef logic was for bordered
   const getViewportCenter = () => {
     if (boardRef.current) {
         const container = boardRef.current;
@@ -577,6 +676,7 @@ export default function KJAnalysisBoard() {
     if (x === undefined || y === undefined) {
         pos = getViewportCenter();
     } else {
+        // Offset for cursor position click (approximate center offset)
         pos.x -= 72; 
         pos.y -= 72;
     }
@@ -597,15 +697,45 @@ export default function KJAnalysisBoard() {
       const item = items.find(i => i.id === noteId);
       if (!item) return;
       
+      let startX, startY;
+      if (item.type === 'image') {
+          startX = item.x + item.width / 2;
+          startY = item.y + item.height / 2;
+      } else {
+          const style = getNoteStyle(item.text, item.type);
+          startX = item.x + style.widthVal / 2;
+          startY = item.y + style.heightVal / 2;
+      }
+
       setDragState({
           id: null, type: null, isConnecting: true, startConnId: noteId,
           startX: e.clientX, startY: e.clientY,
-          currMouseX: item.x + 72, currMouseY: item.y + (item.type === 'memo' ? 40 : 72),
+          currMouseX: startX, currMouseY: startY,
           initItemX: 0, initItemY: 0
       });
   };
 
-  // Helper for text editing history
+  const handleResizeStart = (e, id) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      snapshotRef.current = { items: JSON.parse(JSON.stringify(items)), connections: JSON.parse(JSON.stringify(connections)) };
+
+      setDragState({
+          id: id,
+          type: 'resize',
+          startX: e.clientX,
+          startY: e.clientY,
+          initItemX: item.width, 
+          initItemY: item.height, 
+          isConnecting: false, startConnId: null, currMouseX: 0, currMouseY: 0,
+          initialPositions: {},
+          isDragging: true
+      });
+  };
+
   const handleEditStart = (id, type) => {
       snapshotRef.current = { items: JSON.parse(JSON.stringify(items)), connections: JSON.parse(JSON.stringify(connections)) };
       if (type === 'conn') setEditingConnId(id);
@@ -621,8 +751,7 @@ export default function KJAnalysisBoard() {
           const oldConnsStr = JSON.stringify(oldState.connections);
 
           if (currentItemsStr !== oldItemsStr || currentConnsStr !== oldConnsStr) {
-              // Push the OLD state to history
-              setHistory(prev => [...prev, oldState]);
+              saveToHistory(oldState.items, oldState.connections);
           }
       }
       setEditingId(null);
@@ -639,12 +768,12 @@ export default function KJAnalysisBoard() {
         return; 
     }
     
-    // 1. CLICK TO CONNECT (from L key state)
+    // FIX: Click to Connect Logic (Hit Testing based on board coords)
     if (dragState.isConnecting) {
         if (type === 'note' && id !== dragState.startConnId) {
              const target = items.find(i => i.id === id);
              if (target) {
-                saveToHistory(items, connections); // Save before connect
+                saveToHistory(items, connections); 
                 const existingCount = connections.filter(c => (c.fromId === dragState.startConnId && c.toId === target.id) || (c.fromId === target.id && c.toId === dragState.startConnId)).length;
                 const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
                 setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} }]);
@@ -652,11 +781,11 @@ export default function KJAnalysisBoard() {
                 return;
              }
         }
+        // Click on board cancels connection
         setDragState({ ...dragState, isConnecting: false, startConnId: null });
         return;
     }
 
-    // Board Selection Logic
     if (type === 'board') {
         const rect = boardRef.current.getBoundingClientRect();
         const startX = e.clientX - rect.left + boardRef.current.scrollLeft;
@@ -735,6 +864,15 @@ export default function KJAnalysisBoard() {
          }
     }
 
+    if (dragState.type === 'resize') {
+        const dx = e.clientX - dragState.startX;
+        const dy = e.clientY - dragState.startY;
+        const newW = Math.max(50, dragState.initItemX + dx);
+        const newH = Math.max(50, dragState.initItemY + dy);
+        setItems(prev => prev.map(i => i.id === dragState.id ? { ...i, width: newW, height: newH } : i));
+        return;
+    }
+
     if (dragState.type === 'connectionHandle') {
         const dx = e.clientX - dragState.startX;
         const dy = e.clientY - dragState.startY;
@@ -802,7 +940,6 @@ export default function KJAnalysisBoard() {
         setIsLassoing(false);
         const points = lassoPoints;
         setLassoPoints([]);
-        
         if (points.length > 2) {
             const newSelected = new Set();
             items.forEach(item => {
@@ -821,20 +958,19 @@ export default function KJAnalysisBoard() {
 
     if (dragState.isConnecting) {
         if (boardRef.current) {
-            const boardRect = boardRef.current.getBoundingClientRect();
-            const mouseX = e.clientX - boardRect.left + boardRef.current.scrollLeft;
-            const mouseY = e.clientY - boardRect.top + boardRef.current.scrollTop;
-            const target = items.find(i => {
+          const boardRect = boardRef.current.getBoundingClientRect();
+          const mouseX = e.clientX - boardRect.left + boardRef.current.scrollLeft;
+          const mouseY = e.clientY - boardRect.top + boardRef.current.scrollTop;
+          const target = items.find(i => {
               if (i.id === dragState.startConnId) return false;
-              const center = getCenter(i);
-              return Math.hypot(center.x - mouseX, center.y - mouseY) < 70;
-            });
-            if (target) { 
-               saveToHistory(items, connections); 
-               const existingCount = connections.filter(c => (c.fromId === dragState.startConnId && c.toId === target.id) || (c.fromId === target.id && c.toId === dragState.startConnId)).length;
-               const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
-               setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} }]); 
-            }
+              const cx = i.x + 72; const cy = i.y + 72;
+              return Math.hypot(cx - mouseX, cy - mouseY) < 60;
+          });
+          if (target) { 
+             const existingCount = connections.filter(c => (c.fromId === dragState.startConnId && c.toId === target.id) || (c.fromId === target.id && c.toId === dragState.startConnId)).length;
+             const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
+             setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} }]); 
+          }
         }
     }
 
@@ -878,7 +1014,6 @@ export default function KJAnalysisBoard() {
   };
 
   const handleBoardDoubleClick = (e) => {
-      // Only handle if clicking directly on the board background
       if (e.target === e.currentTarget) {
           const rect = boardRef.current.getBoundingClientRect();
           const x = e.clientX - rect.left + boardRef.current.scrollLeft;
@@ -898,7 +1033,7 @@ export default function KJAnalysisBoard() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-stone-50 font-sans text-slate-800 overflow-hidden" onMouseDown={() => { if (editingId || editingConnId) handleEditEnd(); }}>
+    <div className="flex flex-col h-screen bg-stone-100 font-sans text-slate-800 overflow-hidden" onMouseDown={() => { if (editingId || editingConnId) handleEditEnd(); }}>
       {/* Hidden file input for import */}
       <input 
         type="file" 
@@ -907,13 +1042,15 @@ export default function KJAnalysisBoard() {
         accept=".json" 
         className="hidden" 
       />
+      <input type="file" ref={imageInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
       <GooeyFilters />
       
       {/* 3. Bottom-Center Toolbar */}
-      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-1 bg-white/80 backdrop-blur-md shadow-xl border border-white/50 rounded-full px-2 py-1.5 transition-all hover:shadow-2xl no-export">
-             {/* Title Input Area */}
-             <div className="flex items-center px-2 border-r border-slate-200/60 mr-1">
+      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-[1000] flex items-center gap-1 bg-white/80 backdrop-blur-md shadow-xl border border-white/50 rounded-full px-2 py-1.5 transition-all hover:shadow-2xl select-none">
+             {/* App Logo & Title */}
+             <div className="flex items-center px-2 border-r border-slate-200/60 mr-1 gap-2">
+                 <AppLogo />
                  <input
                     type="text"
                     value={boardName}
@@ -924,11 +1061,11 @@ export default function KJAnalysisBoard() {
                 />
              </div>
 
-             {/* Undo Button - NEW */}
+             {/* Undo Button */}
              <div className="flex items-center border-r border-slate-200/60 pr-1 mr-1">
                  <button 
                     onClick={handleUndo} 
-                    className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors ${history.length > 0 ? 'text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'}`}
+                    className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors text-slate-500 hover:text-indigo-600 hover:bg-indigo-50`}
                     title="撤回 (Ctrl+Z)"
                  >
                     <Undo2 size={20}/>
@@ -945,6 +1082,7 @@ export default function KJAnalysisBoard() {
              <div className="flex items-center gap-2 border-r border-slate-200/60 pr-1 mr-1 ml-1">
                 <button onClick={() => handleAddNote()} className="flex items-center justify-center w-9 h-9 bg-yellow-100/80 hover:bg-yellow-200 text-yellow-800 rounded-full transition-colors shadow-sm" title="添加便签"><Plus size={20} /></button>
                 <button onClick={handleAddMemo} className="flex items-center justify-center w-9 h-9 bg-white/50 hover:bg-white text-slate-600 rounded-full transition-colors shadow-sm ring-1 ring-slate-200" title="添加注释"><MessageSquare size={20} /></button>
+                <button onClick={triggerImageInput} className="flex items-center justify-center w-9 h-9 bg-indigo-50/50 hover:bg-indigo-100 text-indigo-600 rounded-full transition-colors shadow-sm" title="添加图片"><ImageIcon size={20} /></button>
              </div>
 
              {/* Export & Clear */}
@@ -978,7 +1116,7 @@ export default function KJAnalysisBoard() {
             onMouseDown={(e) => handleMouseDown(e, null, 'board')} 
         >
              {/* Gooey Layer */}
-             <div className="absolute inset-0 pointer-events-none z-0" style={{ filter: 'url(#goo)' }}>
+             <div className="absolute inset-0 pointer-events-none z-[5]" style={{ filter: 'url(#goo)' }}>
                 <svg className="absolute inset-0 w-full h-full overflow-visible">
                     {connections.map(conn => {
                         const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId);
@@ -992,7 +1130,7 @@ export default function KJAnalysisBoard() {
                     )}
                 </svg>
                 {/* FILTER OUT MEMOS: Memos are rendered separately outside gooey layer */}
-                {items.filter(item => item.type !== 'memo').map(item => (
+                {items.filter(item => item.type !== 'memo' && item.type !== 'image').map(item => (
                     <BlobBackground key={`blob-${item.id}`} item={item} />
                 ))}
              </div>
@@ -1034,7 +1172,7 @@ export default function KJAnalysisBoard() {
                 );
              })()}
 
-             <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-0 overflow-visible">
+             <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-[6] overflow-visible">
                 {connections.map(conn => {
                     const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId); if(!from || !to) return null;
                     // Don't render overlay if editing (input is rendered above)
@@ -1086,6 +1224,7 @@ export default function KJAnalysisBoard() {
                 onChangeColor={handleColorChange}
                 onUnlink={handleUnlinkItem}
                 onStartConnection={handleStartConnection} 
+                onResizeStart={handleResizeStart}
                />
              ))}
           </div>
