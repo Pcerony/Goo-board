@@ -1,25 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette, Download, MessageSquare, Undo2, RefreshCw, Scaling } from 'lucide-react';
+import { Plus, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette, Download, MessageSquare, Undo2, RefreshCw, Scaling, ExternalLink } from 'lucide-react';
 
 // NOTE: External Libraries injected dynamically via CDN
 const HTML2CANVAS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
 const JSPDF_CDN = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-
-// --- Custom Logo Component ---
-const AppLogo = () => {
-    const [imgError, setImgError] = useState(false);
-    if (imgError) {
-        return (
-             <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-indigo-600">
-                <rect x="5" y="5" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="2.5" />
-                <rect x="17" y="17" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="2.5" />
-                <path d="M15 10H22C23.1 10 24 10.9 24 12V17" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M10 15V22C10 23.1 10.9 24 12 24H17" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-        );
-    }
-    return <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" onError={() => setImgError(true)} />;
-};
 
 // --- Configuration ---
 const POS_TYPES = {
@@ -106,7 +90,7 @@ const isPointInPolygon = (point, vs) => {
 const ColorPicker = ({ onChange, currentType }) => (
   <div className="flex gap-1 mt-2 justify-center" onMouseDown={e => e.stopPropagation()}>
     {Object.entries(POS_TYPES).filter(([k]) => k !== 'MEMO').map(([key, config]) => (
-      <button key={key} title={config.label} onClick={() => onChange(config)} className={`w-4 h-4 rounded-full border border-black/10 transition-transform hover:scale-110 ${config.color} ${currentType === config.id ? 'ring-2 ring-indigo-500 ring-offset-1' : ''}`} />
+      <button key={key} title={config.label} onClick={() => onChange(config)} className={`w-4 h-4 rounded-full border border-black/10 transition-transform hover:scale-110 ${config.color} ${currentType === config.id ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`} />
     ))}
   </div>
 );
@@ -134,7 +118,6 @@ const BlobBackground = ({ item }) => {
 const MemoBackground = ({ item }) => {
     const style = getNoteStyle(item.text, item.type);
     return (
-        // Explicitly set Z-Index to 5 to be above images (2) but below text (10)
         <div 
             className={`absolute rounded-full transition-all duration-300 ease-out ${item.color}`} 
             style={{ 
@@ -142,6 +125,7 @@ const MemoBackground = ({ item }) => {
                 top: item.y, 
                 width: style.width, 
                 height: style.height,
+                // Level 5: Matches Gooey Layer, sits above Images (0)
                 zIndex: 5 
             }} 
         />
@@ -200,16 +184,26 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
   const borderClass = isMemo ? `border ${item.borderColor}` : (isImage ? 'border-none' : '');
   const bgClass = isImage ? '' : ''; 
 
-  // --- Z-INDEX STRATEGY ---
-  // Level 1: Images (2) -> Background
-  // Level 2: Gooey Layer / Memo Backgrounds (5) -> Middle
-  // Level 3: Text Content (10) -> Foreground
-  // Interaction: Dragging/Editing pops to 300
-  let zIndex = 10; 
-  if (isImage) zIndex = 2; // Images sit below notes
+  // --- NEW Z-INDEX STRATEGY ---
+  // 0: Images (Bottom)
+  // 30: Text Content (Top, above Blobs at 5)
+  // 300: Interaction (Dragging/Editing)
+  let zIndex = 30; 
+  if (isImage) zIndex = 0; // FIX: Images sit at level 0 (below level 5 gooey layer)
   
   if (isTargeted) zIndex = 150;
-  if (isSelected || isEditing) zIndex = 300;
+  if (isSelected || isEditing) zIndex = 500;
+
+  const handleLinkClick = (e) => {
+      e.stopPropagation();
+      if (item.url && !isEditing) {
+          let url = item.url;
+          if (!url.startsWith('http://') && !url.startsWith('https://')) {
+              url = 'https://' + url;
+          }
+          window.open(url, '_blank');
+      }
+  };
 
   return (
     <div
@@ -234,9 +228,9 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
         ${shapeClass} ${borderClass} ${bgClass}
         ${!isImage && 'p-4'} 
         ${isEditing ? 'select-text cursor-auto' : 'select-none'}
-        ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2' : 
-          (isTargeted ? 'ring-4 ring-indigo-300 ring-offset-2' : 
-            (isGrouped ? 'border-2 border-dashed border-indigo-400/50' : ''))}`}
+        ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2' : 
+          (isTargeted ? 'ring-4 ring-blue-300 ring-offset-2' : 
+            (isGrouped ? 'border-2 border-dashed border-blue-400/50' : ''))}`}
     >
         {/* EDIT MODE: Color Picker (Top) - Only for standard notes */}
         {isEditing && !isMemo && !isImage && (
@@ -253,7 +247,7 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
             <div 
                 className="absolute -right-6 top-1/2 transform -translate-y-1/2 bg-green-500 text-white p-2 rounded-full shadow-lg cursor-crosshair z-50 animate-in fade-in zoom-in hover:scale-110 transition-transform pointer-events-auto"
                 onMouseDown={(e) => onStartConnection(e, item.id)}
-                title="拖拽连线"
+                title="Drag to Connect"
             >
                 <LinkIcon size={16} />
             </div>
@@ -262,16 +256,27 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
         {/* Image Resize Handle */}
         {isImage && isEditing && (
             <div 
-                className="absolute -right-3 -bottom-3 bg-indigo-500 text-white p-1.5 rounded-full shadow-lg cursor-se-resize z-50 animate-in fade-in pointer-events-auto hover:scale-110"
+                className="absolute -right-3 -bottom-3 bg-blue-500 text-white p-1.5 rounded-full shadow-lg cursor-se-resize z-50 animate-in fade-in pointer-events-auto hover:scale-110"
                 onMouseDown={(e) => onResizeStart(e, item.id)}
-                title="调整大小"
+                title="Resize"
             >
                 <Scaling size={14} />
             </div>
         )}
+
+        {/* URL Link Button (Only for Memos with URL in View Mode) */}
+        {isMemo && item.url && !isEditing && (
+            <div 
+                className="absolute -right-2 -top-2 bg-blue-500 text-white p-1.5 rounded-full shadow-lg cursor-pointer z-50 animate-in fade-in pointer-events-auto hover:bg-blue-600 hover:scale-110 transition-transform"
+                onMouseDown={handleLinkClick}
+                title={`Go to: ${item.url}`}
+            >
+                <ExternalLink size={12} />
+            </div>
+        )}
         
         {isTargeted && (
-             <div className="absolute -right-2 -bottom-2 bg-indigo-600 text-white rounded-full p-1 shadow animate-bounce z-50">
+             <div className="absolute -right-2 -bottom-2 bg-blue-600 text-white rounded-full p-1 shadow animate-bounce z-50">
                 <Check size={12} />
              </div>
         )}
@@ -290,8 +295,8 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
                         autoFocus 
                         className={`w-full h-full bg-transparent resize-none border-none focus:ring-0 text-center ${fontSize} ${isMemo ? 'text-slate-700 font-medium' : 'text-gray-900 font-bold'} p-0 select-text leading-tight`} 
                         value={item.text} 
-                        placeholder={styleInfo.isMemo ? "" : ""} 
-                        onChange={(e) => onUpdateText(item.id, e.target.value)} 
+                        placeholder={styleInfo.isMemo ? "Type memo..." : "Type here..."} 
+                        onChange={(e) => onUpdateText(item.id, e.target.value, item.url)} 
                         onKeyDown={(e) => { 
                             if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setEditingId(null); } 
                         }} 
@@ -305,17 +310,33 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
                 )
             )}
         </div>
+
+        {/* --- FLOATING URL INPUT (Plan B: Outside the main content flow) --- */}
+        {isEditing && isMemo && (
+             <div 
+                className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 z-[500] w-48 animate-in fade-in slide-in-from-top-1 pointer-events-auto"
+                onMouseDown={(e) => e.stopPropagation()} 
+             >
+                <input 
+                    className="w-full bg-white/90 backdrop-blur shadow-xl border border-blue-200 rounded-lg px-2 py-1.5 text-xs text-center outline-none focus:ring-2 focus:ring-blue-400 placeholder-slate-400 text-slate-600"
+                    value={item.url || ''}
+                    placeholder="Paste URL..."
+                    onChange={(e) => onUpdateText(item.id, item.text, e.target.value)}
+                    onKeyDown={(e) => { if(e.key === 'Enter') setEditingId(null); }}
+                />
+             </div>
+        )}
         
-        {/* EDIT MODE: Action Buttons (Bottom) */}
+        {/* EDIT MODE: Action Buttons (Bottom - Pushed down further for memos) */}
         {isEditing && (
             <div 
-                className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 flex gap-2 bg-white px-3 py-1.5 rounded-full shadow-lg border border-slate-200 z-50 animate-in fade-in slide-in-from-top-2 pointer-events-auto"
+                className={`absolute left-1/2 transform -translate-x-1/2 flex gap-2 bg-white px-3 py-1.5 rounded-full shadow-lg border border-slate-200 z-50 animate-in fade-in slide-in-from-top-2 pointer-events-auto ${isMemo ? '-bottom-20' : '-bottom-10'}`}
                 onMouseDown={(e) => e.stopPropagation()} 
             >
                 {item.groupId && ( 
                     <button 
                         onClick={() => { onUnlink(item.id); setEditingId(null); }} 
-                        className="text-slate-500 hover:text-indigo-600 hover:bg-slate-100 p-1 rounded transition-colors flex items-center gap-1" 
+                        className="text-slate-500 hover:text-blue-600 hover:bg-blue-50 p-1 rounded transition-colors flex items-center gap-1" 
                     >
                         <Unlink size={16} />
                     </button>
@@ -323,7 +344,7 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
                 <button 
                     onClick={() => { onDelete(item.id); setEditingId(null); }} 
                     className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors flex items-center gap-1" 
-                    title="删除"
+                    title="Delete"
                 >
                     <Trash2 size={16} />
                 </button>
@@ -346,6 +367,7 @@ const ConnectionOverlay = ({ connection, from, to, onDelete, offset, onMouseDown
         onMouseDown={(e) => onMouseDownHandle(e, connection.id, 'connectionHandle')}
         onDoubleClick={(e) => { e.stopPropagation(); onDoubleClickEdit(connection.id); }} 
         className="cursor-move"
+        style={{ zIndex: 20 }} // Interaction Layer
       >
           {/* HIT AREA */}
           {label ? (
@@ -378,7 +400,7 @@ const ConnectionOverlay = ({ connection, from, to, onDelete, offset, onMouseDown
 export default function KJAnalysisBoard() {
   const [items, setItems] = useState([]);
   const [connections, setConnections] = useState([]);
-  const [boardName, setBoardName] = useState('未命名分析');
+  const [boardName, setBoardName] = useState('Untitled Analysis');
   const boardRef = useRef(null); 
   const contentRef = useRef(null); 
   const fileInputRef = useRef(null);
@@ -590,11 +612,11 @@ export default function KJAnalysisBoard() {
            setConnections(parsed.connections || []);
            if (parsed.boardName) setBoardName(parsed.boardName); 
         } else {
-           alert("文件格式不正确");
+           alert("Invalid file format");
         }
       } catch (err) {
         console.error(err);
-        alert("读取文件失败");
+        alert("Failed to read file");
       }
     };
     reader.readAsText(file);
@@ -632,7 +654,7 @@ export default function KJAnalysisBoard() {
               }
           });
           
-          const filename = `${boardName}_导出`; 
+          const filename = `${boardName}_Export`; 
 
           if (format === 'png') {
               const link = document.createElement('a'); link.download = `${filename}.png`; link.href = canvas.toDataURL('image/png'); link.click();
@@ -643,17 +665,19 @@ export default function KJAnalysisBoard() {
               pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
               pdf.save(`${filename}.pdf`);
           }
-      } catch (err) { console.error("Export failed:", err); alert("导出失败，请重试"); } finally { setIsExporting(false); }
+      } catch (err) { console.error("Export failed:", err); alert("Export failed, please try again"); } finally { setIsExporting(false); }
   };
 
-  const clearBoard = () => { if(confirm('确定要清空所有内容吗？')) { saveToHistory(items, connections); setItems([]); setConnections([]); setBoardName('未命名分析'); } };
+  const clearBoard = () => { if(confirm('Are you sure you want to clear the board?')) { saveToHistory(items, connections); setItems([]); setConnections([]); setBoardName('Untitled Analysis'); } };
   const handleDeleteItem = (id) => { saveToHistory(items, connections); setItems(items.filter(i => i.id !== id)); setConnections(conn => conn.filter(c => c.fromId !== id && c.toId !== id)); };
   const handleUnlinkItem = (id) => { saveToHistory(items, connections); setUnlinkingId(id); setTimeout(() => { setItems(prev => prev.map(i => i.id === id ? { ...i, groupId: null } : i)); setUnlinkingId(null); }, 300); };
   const handleDeleteConnection = (id) => { saveToHistory(items, connections); setConnections(prev => prev.filter(c => c.id !== id)); };
   
   const handleUpdateConnectionLabel = (id, text) => { setConnections(prev => prev.map(c => c.id === id ? { ...c, label: text } : c)); };
   const handleColorChange = (id, config) => { saveToHistory(items, connections); setItems(items.map(i => i.id === id ? { ...i, color: config.color, borderColor: config.borderColor, strokeColor: config.strokeColor, gradientText: config.gradientText, type: config.id } : i)); };
-  const handleUpdateText = (id, newText) => { setItems(items.map(i => i.id === id ? { ...i, text: newText } : i)); };
+  const handleUpdateText = (id, newText, newUrl) => { 
+      setItems(items.map(i => i.id === id ? { ...i, text: newText, url: newUrl !== undefined ? newUrl : i.url } : i)); 
+  };
   
   // FIX: Get center relative to content board using contentRef
   // IMPORTANT: Reverting to boardRef scroll logic because contentRef logic was for bordered
@@ -787,9 +811,9 @@ export default function KJAnalysisBoard() {
     }
 
     if (type === 'board') {
-        const rect = boardRef.current.getBoundingClientRect();
-        const startX = e.clientX - rect.left + boardRef.current.scrollLeft;
-        const startY = e.clientY - rect.top + boardRef.current.scrollTop;
+        const rect = contentRef.current.getBoundingClientRect();
+        const startX = e.clientX - rect.left;
+        const startY = e.clientY - rect.top;
         setSelectedIds(new Set());
         setIsLassoing(true);
         setLassoPoints([{x: startX, y: startY}]);
@@ -850,10 +874,10 @@ export default function KJAnalysisBoard() {
     mousePosRef.current = { x: e.clientX, y: e.clientY };
 
     if (isLassoing) {
-        if (!boardRef.current) return;
-        const rect = boardRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left + boardRef.current.scrollLeft;
-        const y = e.clientY - rect.top + boardRef.current.scrollTop;
+        if (!contentRef.current) return;
+        const rect = contentRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
         setLassoPoints(prev => [...prev, {x, y}]);
         return;
     }
@@ -883,9 +907,9 @@ export default function KJAnalysisBoard() {
     }
 
     if (dragState.isConnecting) {
-        if (!boardRef.current) return;
-        const boardRect = boardRef.current.getBoundingClientRect();
-        setDragState(prev => ({ ...prev, currMouseX: e.clientX - boardRect.left + boardRef.current.scrollLeft, currMouseY: e.clientY - boardRect.top + boardRef.current.scrollTop }));
+        if (!contentRef.current) return;
+        const rect = contentRef.current.getBoundingClientRect();
+        setDragState(prev => ({ ...prev, currMouseX: e.clientX - rect.left, currMouseY: e.clientY - rect.top }));
         return;
     }
     if (!dragState.isDragging) return;
@@ -935,7 +959,6 @@ export default function KJAnalysisBoard() {
   const handleMouseUp = (e) => {
     clearTimeout(hoverTimeoutRef.current); hoverCandidateIdRef.current = null; clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null;
     
-    // Finalize Lasso Selection
     if (isLassoing) {
         setIsLassoing(false);
         const points = lassoPoints;
@@ -957,20 +980,23 @@ export default function KJAnalysisBoard() {
     }
 
     if (dragState.isConnecting) {
-        if (boardRef.current) {
-          const boardRect = boardRef.current.getBoundingClientRect();
-          const mouseX = e.clientX - boardRect.left + boardRef.current.scrollLeft;
-          const mouseY = e.clientY - boardRect.top + boardRef.current.scrollTop;
-          const target = items.find(i => {
+        if (contentRef.current) {
+            const rect = contentRef.current.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            // Revert to distance-based check (center point distance)
+            const target = items.find(i => {
               if (i.id === dragState.startConnId) return false;
-              const cx = i.x + 72; const cy = i.y + 72;
-              return Math.hypot(cx - mouseX, cy - mouseY) < 60;
-          });
-          if (target) { 
-             const existingCount = connections.filter(c => (c.fromId === dragState.startConnId && c.toId === target.id) || (c.fromId === target.id && c.toId === dragState.startConnId)).length;
-             const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
-             setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} }]); 
-          }
+              const center = getCenter(i);
+              return Math.hypot(center.x - mouseX, center.y - mouseY) < 70; // 70px snap radius
+            });
+            if (target) { 
+               saveToHistory(items, connections); 
+               const existingCount = connections.filter(c => (c.fromId === dragState.startConnId && c.toId === target.id) || (c.fromId === target.id && c.toId === dragState.startConnId)).length;
+               const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
+               setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} }]); 
+            }
         }
     }
 
@@ -1014,11 +1040,12 @@ export default function KJAnalysisBoard() {
   };
 
   const handleBoardDoubleClick = (e) => {
+      // Only handle if clicking directly on the board background
       if (e.target === e.currentTarget) {
-          const rect = boardRef.current.getBoundingClientRect();
-          const x = e.clientX - rect.left + boardRef.current.scrollLeft;
-          const y = e.clientY - rect.top + boardRef.current.scrollTop;
-          handleAddNote(x - 72, y - 72); 
+          const rect = contentRef.current.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          handleAddNote(x, y); 
       }
   };
 
@@ -1047,50 +1074,49 @@ export default function KJAnalysisBoard() {
       <GooeyFilters />
       
       {/* 3. Bottom-Center Toolbar */}
-      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-[1000] flex items-center gap-1 bg-white/80 backdrop-blur-md shadow-xl border border-white/50 rounded-full px-2 py-1.5 transition-all hover:shadow-2xl select-none">
-             {/* App Logo & Title */}
-             <div className="flex items-center px-2 border-r border-slate-200/60 mr-1 gap-2">
-                 <AppLogo />
+      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-[1000] flex items-center gap-1 bg-white/80 backdrop-blur-md shadow-xl border border-blue-200 rounded-full px-2 py-1.5 transition-all hover:shadow-2xl select-none">
+             {/* Title Input Area (No Logo) */}
+             <div className="flex items-center px-2 border-r border-blue-200/60 mr-1">
                  <input
                     type="text"
                     value={boardName}
                     onChange={(e) => setBoardName(e.target.value)}
                     className="text-sm font-bold tracking-tight text-slate-700 bg-transparent border-none focus:ring-0 w-32 text-center placeholder-slate-400"
-                    placeholder="未命名分析"
-                    title="点击修改名称"
+                    placeholder="Untitled Analysis"
+                    title="Edit board name"
                 />
              </div>
 
              {/* Undo Button */}
-             <div className="flex items-center border-r border-slate-200/60 pr-1 mr-1">
+             <div className="flex items-center border-r border-blue-200/60 pr-1 mr-1">
                  <button 
                     onClick={handleUndo} 
-                    className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors text-slate-500 hover:text-indigo-600 hover:bg-indigo-50`}
-                    title="撤回 (Ctrl+Z)"
+                    className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors text-slate-500 hover:text-blue-600 hover:bg-blue-50`}
+                    title="Undo (Ctrl+Z)"
                  >
                     <Undo2 size={20}/>
                  </button>
              </div>
 
              {/* File Group */}
-             <div className="flex items-center gap-0.5 border-r border-slate-200/60 pr-1 mr-1">
-                 <button onClick={handleSaveToFile} className="flex items-center justify-center w-9 h-9 text-indigo-600 hover:bg-indigo-50/80 rounded-full transition-colors" title="保存数据"><Save size={20}/></button>
-                 <button onClick={triggerFileInput} className="flex items-center justify-center w-9 h-9 text-slate-600 hover:bg-slate-100/80 rounded-full transition-colors" title="读取数据"><Upload size={20}/></button>
+             <div className="flex items-center gap-0.5 border-r border-blue-200/60 pr-1 mr-1">
+                 <button onClick={handleSaveToFile} className="flex items-center justify-center w-9 h-9 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Save Data (.json)"><Save size={20}/></button>
+                 <button onClick={triggerFileInput} className="flex items-center justify-center w-9 h-9 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Load Data (.json)"><Upload size={20}/></button>
              </div>
              
              {/* Actions Group */}
-             <div className="flex items-center gap-2 border-r border-slate-200/60 pr-1 mr-1 ml-1">
-                <button onClick={() => handleAddNote()} className="flex items-center justify-center w-9 h-9 bg-yellow-100/80 hover:bg-yellow-200 text-yellow-800 rounded-full transition-colors shadow-sm" title="添加便签"><Plus size={20} /></button>
-                <button onClick={handleAddMemo} className="flex items-center justify-center w-9 h-9 bg-white/50 hover:bg-white text-slate-600 rounded-full transition-colors shadow-sm ring-1 ring-slate-200" title="添加注释"><MessageSquare size={20} /></button>
-                <button onClick={triggerImageInput} className="flex items-center justify-center w-9 h-9 bg-indigo-50/50 hover:bg-indigo-100 text-indigo-600 rounded-full transition-colors shadow-sm" title="添加图片"><ImageIcon size={20} /></button>
+             <div className="flex items-center gap-2 border-r border-blue-200/60 pr-1 mr-1 ml-1">
+                <button onClick={() => handleAddNote()} className="flex items-center justify-center w-9 h-9 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 rounded-full transition-colors shadow-sm" title="Add Note"><Plus size={20} /></button>
+                <button onClick={handleAddMemo} className="flex items-center justify-center w-9 h-9 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-full transition-colors shadow-sm" title="Add Memo"><MessageSquare size={20} /></button>
+                <button onClick={triggerImageInput} className="flex items-center justify-center w-9 h-9 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full transition-colors shadow-sm" title="Add Image"><ImageIcon size={20} /></button>
              </div>
 
              {/* Export & Clear */}
              <div className="relative flex items-center gap-0.5">
                 <button 
                     onClick={() => setShowExportMenu(!showExportMenu)}
-                    className="flex items-center justify-center w-9 h-9 text-slate-600 hover:bg-slate-100/80 rounded-full transition-colors"
-                    title="导出"
+                    className="flex items-center justify-center w-9 h-9 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                    title="Export"
                 >
                     <Download size={20}/>
                 </button>
@@ -1101,7 +1127,7 @@ export default function KJAnalysisBoard() {
                     </div>
                 )}
                 
-                <button onClick={clearBoard} className="flex items-center justify-center w-9 h-9 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-full transition-colors" title="清空画板"><Trash2 size={20} /></button>
+                <button onClick={clearBoard} className="flex items-center justify-center w-9 h-9 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-full transition-colors" title="Clear Board"><Trash2 size={20} /></button>
              </div>
       </div>
 
@@ -1160,9 +1186,9 @@ export default function KJAnalysisBoard() {
                     >
                         <input
                             autoFocus
-                            className="w-32 px-2 py-1 text-center text-xs border border-indigo-500 rounded shadow-lg focus:outline-none bg-white select-text pointer-events-auto"
+                            className="w-32 px-2 py-1 text-center text-xs border border-blue-500 rounded shadow-lg focus:outline-none bg-white select-text pointer-events-auto"
                             value={conn.label || ''}
-                            placeholder="输入关系..."
+                            placeholder="Input..."
                             onChange={(e) => handleUpdateConnectionLabel(conn.id, e.target.value)}
                             onBlur={handleEditEnd}
                             onKeyDown={(e) => { if (e.key === 'Enter') handleEditEnd(); }}
