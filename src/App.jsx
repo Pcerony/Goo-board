@@ -1,9 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette, Download, MessageSquare, Undo2, RefreshCw, Scaling, ExternalLink } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Plus, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette, Download, MessageSquare, Undo2, RefreshCw, Scaling, ExternalLink, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown } from 'lucide-react';
 
 // NOTE: External Libraries injected dynamically via CDN
 const HTML2CANVAS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
 const JSPDF_CDN = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+const BOARD_IMAGE_MAX_SIZE = 300;
+const STORED_IMAGE_MAX_SIZE = 1400;
+const IMAGE_COMPRESSION_QUALITY = 0.82;
+const SAVE_HANDLE_DB_NAME = 'final-board-save-handles';
+const SAVE_HANDLE_STORE_NAME = 'daily-handles';
+const CONNECTION_PLANE_ABOVE_IMAGES = 'above-images';
+const CONNECTION_PLANE_BELOW_IMAGES = 'below-images';
 
 // --- Configuration ---
 const POS_TYPES = {
@@ -15,6 +22,19 @@ const POS_TYPES = {
   ORANGE: { id: 'orange', label: '橙色', color: 'bg-gradient-to-br from-orange-300 to-red-300', borderColor: 'border-orange-400', strokeColor: 'stroke-orange-400', gradientText: 'text-orange-400' },
   MEMO: { id: 'memo', label: '备注', color: 'bg-white/60 backdrop-blur-md shadow-sm', borderColor: 'border-slate-300', strokeColor: 'stroke-slate-200', gradientText: 'text-slate-200' }, 
 };
+
+const CONNECTION_COLORS = {
+  noun: '#fde047',
+  verb: '#86efac',
+  adj: '#93c5fd',
+  pink: '#f9a8d4',
+  purple: '#c4b5fd',
+  orange: '#fdba74',
+  memo: '#e2e8f0',
+  image: '#94a3b8'
+};
+
+const getConnectionColor = (item) => CONNECTION_COLORS[item?.type] || '#94a3b8';
 
 const getNoteStyle = (text, type, customWidth, customHeight) => {
   if (type === 'image') {
@@ -59,11 +79,39 @@ const getCurvePoints = (from, to, offset = {x: 0, y: 0}) => {
     const midY = (from.y + to.y) / 2;
     if (isNaN(midX) || isNaN(midY)) return { path: '', labelX: 0, labelY: 0 };
 
-    const cpX = midX + offset.x;
-    const cpY = midY + offset.y;
-    const labelX = midX + 0.5 * offset.x;
-    const labelY = midY + 0.5 * offset.y;
-    return { path: `M${from.x},${from.y} Q${cpX},${cpY} ${to.x},${to.y}`, labelX, labelY };
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const distance = Math.hypot(dx, dy);
+    if (!distance) return { path: `M${from.x},${from.y}`, labelX: from.x, labelY: from.y };
+
+    const unitX = dx / distance;
+    const unitY = dy / distance;
+    const anchor = {
+        x: midX + offset.x,
+        y: midY + offset.y
+    };
+    const endHandle = Math.min(280, Math.max(100, distance * 0.38));
+    const midHandle = Math.min(220, Math.max(70, distance * 0.24));
+    const c1 = {
+        x: from.x + unitX * endHandle,
+        y: from.y + unitY * endHandle
+    };
+    const c2 = {
+        x: anchor.x - unitX * midHandle,
+        y: anchor.y - unitY * midHandle
+    };
+    const c3 = {
+        x: anchor.x + unitX * midHandle,
+        y: anchor.y + unitY * midHandle
+    };
+    const c4 = {
+        x: to.x - unitX * endHandle,
+        y: to.y - unitY * endHandle
+    };
+    const labelX = anchor.x;
+    const labelY = anchor.y;
+
+    return { path: `M${from.x},${from.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${anchor.x},${anchor.y} C${c3.x},${c3.y} ${c4.x},${c4.y} ${to.x},${to.y}`, labelX, labelY };
 };
 
 const getLabelDimensions = (label) => {
@@ -71,6 +119,37 @@ const getLabelDimensions = (label) => {
     const width = Math.max(36, len * 12 + 16); 
     const height = 36; 
     return { width, height, rx: height / 2 };
+};
+
+const getConnectionLayer = (connection, sourceIndex) => connection.connectionLayer ?? sourceIndex;
+const getConnectionPlane = (connection) => (
+    connection.connectionPlane === CONNECTION_PLANE_BELOW_IMAGES
+        ? CONNECTION_PLANE_BELOW_IMAGES
+        : CONNECTION_PLANE_ABOVE_IMAGES
+);
+
+const getLayeredConnections = (connections, plane) => connections
+    .map((connection, sourceIndex) => ({
+        connection,
+        sourceIndex,
+        layer: getConnectionLayer(connection, sourceIndex)
+    }))
+    .filter(({ connection }) => !plane || getConnectionPlane(connection) === plane)
+    .sort((a, b) => a.layer === b.layer ? a.sourceIndex - b.sourceIndex : a.layer - b.layer);
+
+const createLayeredConnection = (connections, connection) => {
+    const nextLayer = connections.reduce((max, current, index) => (
+        Math.max(max, getConnectionLayer(current, index))
+    ), -1) + 1;
+
+    return { ...connection, connectionLayer: nextLayer, connectionPlane: CONNECTION_PLANE_ABOVE_IMAGES };
+};
+
+const getConnectionVisualPoints = (fromItem, toItem) => {
+    return {
+        from: getCenter(fromItem),
+        to: getCenter(toItem)
+    };
 };
 
 const isPointInPolygon = (point, vs) => {
@@ -83,6 +162,291 @@ const isPointInPolygon = (point, vs) => {
         if (intersect) inside = !inside;
     }
     return inside;
+};
+
+const getScaledSize = (width, height, maxSize) => {
+    let w = width;
+    let h = height;
+
+    if (w > h) {
+        if (w > maxSize) {
+            h = Math.round(h * (maxSize / w));
+            w = maxSize;
+        }
+    } else if (h > maxSize) {
+        w = Math.round(w * (maxSize / h));
+        h = maxSize;
+    }
+
+    return { width: Math.max(1, w), height: Math.max(1, h) };
+};
+
+const getDataUrlByteSize = (dataUrl) => {
+    const payload = dataUrl.split(',')[1] || '';
+    return Math.round((payload.length * 3) / 4);
+};
+
+const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+});
+
+const loadImageElement = (source) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = source;
+});
+
+const canvasToCompressedDataUrl = (canvas) => new Promise((resolve) => {
+    if (!canvas.toBlob) {
+        resolve(canvas.toDataURL('image/webp', IMAGE_COMPRESSION_QUALITY));
+        return;
+    }
+
+    canvas.toBlob(async (blob) => {
+        if (!blob) {
+            resolve(canvas.toDataURL('image/webp', IMAGE_COMPRESSION_QUALITY));
+            return;
+        }
+        resolve(await blobToDataUrl(blob));
+    }, 'image/webp', IMAGE_COMPRESSION_QUALITY);
+});
+
+const compressImageSource = async (source, originalBytes = Infinity) => {
+    const img = await loadImageElement(source);
+    const naturalWidth = img.naturalWidth || img.width;
+    const naturalHeight = img.naturalHeight || img.height;
+    const storedSize = getScaledSize(naturalWidth, naturalHeight, STORED_IMAGE_MAX_SIZE);
+    const canvas = document.createElement('canvas');
+    canvas.width = storedSize.width;
+    canvas.height = storedSize.height;
+
+    const context = canvas.getContext('2d', { alpha: true });
+    context.drawImage(img, 0, 0, storedSize.width, storedSize.height);
+
+    const compressedDataUrl = await canvasToCompressedDataUrl(canvas);
+    const compressedBytes = getDataUrlByteSize(compressedDataUrl);
+
+    const canKeepSource = source.startsWith('data:image/');
+
+    return {
+        dataUrl: canKeepSource && compressedBytes >= originalBytes ? source : compressedDataUrl,
+        naturalWidth,
+        naturalHeight,
+        storedWidth: storedSize.width,
+        storedHeight: storedSize.height,
+        compressedBytes: Math.min(compressedBytes, originalBytes)
+    };
+};
+
+const compressImageFile = async (file) => {
+    const objectUrl = URL.createObjectURL(file);
+    try {
+        return await compressImageSource(objectUrl, file.size);
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
+};
+
+const compressImageDataUrl = async (dataUrl) => {
+    const originalBytes = getDataUrlByteSize(dataUrl);
+    return compressImageSource(dataUrl, originalBytes);
+};
+
+const normalizeLoadedItems = async (loadedItems) => {
+    let fallbackImageLayer = 0;
+
+    return Promise.all(loadedItems.map(async (item) => {
+        if (item.type !== 'image') return item;
+
+        const normalized = {
+            ...item,
+            imageLayer: Number.isFinite(item.imageLayer) ? item.imageLayer : fallbackImageLayer++
+        };
+
+        if (!normalized.imageUrl?.startsWith('data:image/')) return normalized;
+
+        try {
+            const compressed = await compressImageDataUrl(normalized.imageUrl);
+            const displaySize = getScaledSize(
+                compressed.naturalWidth || normalized.width || BOARD_IMAGE_MAX_SIZE,
+                compressed.naturalHeight || normalized.height || BOARD_IMAGE_MAX_SIZE,
+                BOARD_IMAGE_MAX_SIZE
+            );
+
+            return {
+                ...normalized,
+                imageUrl: compressed.dataUrl,
+                width: normalized.width || displaySize.width,
+                height: normalized.height || displaySize.height,
+                originalWidth: compressed.naturalWidth,
+                originalHeight: compressed.naturalHeight,
+                storedWidth: compressed.storedWidth,
+                storedHeight: compressed.storedHeight,
+                compressedBytes: compressed.compressedBytes
+            };
+        } catch {
+            return normalized;
+        }
+    }));
+};
+
+const cloneItemsForHistory = (items) => items.map(item => ({ ...item }));
+
+const cloneConnectionsForHistory = (connections) => connections.map(connection => ({
+    ...connection,
+    controlOffset: connection.controlOffset ? { ...connection.controlOffset } : connection.controlOffset
+}));
+
+const cloneBoardState = (items, connections) => ({
+    items: cloneItemsForHistory(items),
+    connections: cloneConnectionsForHistory(connections)
+});
+
+const areItemsEqual = (current, previous) => {
+    if (current.length !== previous.length) return false;
+
+    return current.every((item, index) => {
+        const other = previous[index];
+        if (!other) return false;
+
+        const keys = new Set([...Object.keys(item), ...Object.keys(other)]);
+        for (const key of keys) {
+            if (key === 'imageUrl') continue;
+            if (item[key] !== other[key]) return false;
+        }
+        return true;
+    });
+};
+
+const areConnectionsEqual = (current, previous) => {
+    if (current.length !== previous.length) return false;
+
+    return current.every((connection, index) => {
+        const other = previous[index];
+        if (!other) return false;
+
+        const currentOffset = connection.controlOffset || {};
+        const otherOffset = other.controlOffset || {};
+        return connection.id === other.id
+            && connection.fromId === other.fromId
+            && connection.toId === other.toId
+            && connection.label === other.label
+            && connection.connectionLayer === other.connectionLayer
+            && getConnectionPlane(connection) === getConnectionPlane(other)
+            && currentOffset.x === otherOffset.x
+            && currentOffset.y === otherOffset.y;
+    });
+};
+
+const areBoardStatesEqual = (items, connections, previousState) => (
+    previousState
+    && areItemsEqual(items, previousState.items || [])
+    && areConnectionsEqual(connections, previousState.connections || [])
+);
+
+const createBoardId = () => {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    return `board-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const getLocalDateKey = (date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const sanitizeFileName = (name) => {
+    const reservedChars = new Set(['<', '>', ':', '"', '/', '\\', '|', '?', '*']);
+    const cleaned = (name || 'Untitled Analysis')
+        .split('')
+        .map(char => reservedChars.has(char) || char.charCodeAt(0) < 32 ? '_' : char)
+        .join('')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return (cleaned || 'Untitled Analysis').slice(0, 80);
+};
+
+const getSaveHandleKey = (boardId, dateKey) => `${boardId}:${dateKey}`;
+
+const openSaveHandleDb = () => new Promise((resolve, reject) => {
+    const request = indexedDB.open(SAVE_HANDLE_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+        request.result.createObjectStore(SAVE_HANDLE_STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+});
+
+const getStoredSaveHandle = async (key) => {
+    const db = await openSaveHandleDb();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(SAVE_HANDLE_STORE_NAME, 'readonly');
+        const request = transaction.objectStore(SAVE_HANDLE_STORE_NAME).get(key);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+        transaction.oncomplete = () => db.close();
+    });
+};
+
+const storeSaveHandle = async (key, handle) => {
+    const db = await openSaveHandleDb();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(SAVE_HANDLE_STORE_NAME, 'readwrite');
+        transaction.objectStore(SAVE_HANDLE_STORE_NAME).put(handle, key);
+        transaction.oncomplete = () => {
+            db.close();
+            resolve();
+        };
+        transaction.onerror = () => {
+            db.close();
+            reject(transaction.error);
+        };
+    });
+};
+
+const deleteStoredSaveHandle = async (key) => {
+    const db = await openSaveHandleDb();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(SAVE_HANDLE_STORE_NAME, 'readwrite');
+        transaction.objectStore(SAVE_HANDLE_STORE_NAME).delete(key);
+        transaction.oncomplete = () => {
+            db.close();
+            resolve();
+        };
+        transaction.onerror = () => {
+            db.close();
+            reject(transaction.error);
+        };
+    });
+};
+
+const verifyWritablePermission = async (handle) => {
+    const options = { mode: 'readwrite' };
+    if ((await handle.queryPermission(options)) === 'granted') return true;
+    return (await handle.requestPermission(options)) === 'granted';
+};
+
+const writeTextToFileHandle = async (handle, text) => {
+    const writable = await handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+};
+
+const downloadJsonFile = (text, fileName) => {
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 };
 
 // --- Sub Components ---
@@ -98,10 +462,9 @@ const ColorPicker = ({ onChange, currentType }) => (
 const GooeyFilters = () => (
   <svg style={{ position: 'absolute', width: 0, height: 0, pointerEvents: 'none' }}>
     <defs>
-      <filter id="goo">
-        <feGaussianBlur in="SourceGraphic" stdDeviation="20" result="blur" />
-        <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 40 -10" result="goo" />
-        <feComposite in="SourceGraphic" in2="goo" operator="atop"/>
+      <filter id="goo" colorInterpolationFilters="sRGB">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="blur" />
+        <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -7" result="goo" />
       </filter>
     </defs>
   </svg>
@@ -142,10 +505,10 @@ const GooeyLine = ({ id, from, to, fromColor, toColor, offset, label }) => {
         <g>
             <defs>
                 <linearGradient id={gradientId} x1={from.x} y1={from.y} x2={to.x} y2={to.y} gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" className={fromColor} stopColor="currentColor" stopOpacity="1" />
-                    <stop offset="35%" className={fromColor} stopColor="currentColor" stopOpacity="1" />
-                    <stop offset="65%" className={toColor} stopColor="currentColor" stopOpacity="1" />
-                    <stop offset="100%" className={toColor} stopColor="currentColor" stopOpacity="1" />
+                    <stop offset="0%" stopColor={fromColor} stopOpacity="1" />
+                    <stop offset="46%" stopColor={fromColor} stopOpacity="1" />
+                    <stop offset="54%" stopColor={toColor} stopOpacity="1" />
+                    <stop offset="100%" stopColor={toColor} stopOpacity="1" />
                 </linearGradient>
             </defs>
             <path 
@@ -171,7 +534,7 @@ const GooeyLine = ({ id, from, to, fromColor, toColor, offset, label }) => {
     );
 };
 
-const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, onUnlink, onStartConnection, onResizeStart, isSelected, isTargeted, mode, isEditing, setEditingId, isUnlinking }) => {
+const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, onUnlink, onStartConnection, isSelected, isTargeted, isEditing, setEditingId, isUnlinking }) => {
   if (!item) return null;
   const isMemo = item.type === 'memo';
   const isImage = item.type === 'image';
@@ -184,12 +547,12 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
   const borderClass = isMemo ? `border ${item.borderColor}` : (isImage ? 'border-none' : '');
   const bgClass = isImage ? '' : ''; 
 
-  // --- NEW Z-INDEX STRATEGY ---
-  // 0: Images (Bottom)
+  // --- Z-INDEX STRATEGY ---
+  // Images are rendered in their own lower container; imageLayer only sorts images.
   // 30: Text Content (Top, above Blobs at 5)
   // 300: Interaction (Dragging/Editing)
   let zIndex = 30; 
-  if (isImage) zIndex = 0; // FIX: Images sit at level 0 (below level 5 gooey layer)
+  if (isImage) zIndex = item.imageLayer || 0;
   
   if (isTargeted) zIndex = 150;
   if (isSelected || isEditing) zIndex = 500;
@@ -226,6 +589,7 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
         }}
         className={`absolute flex flex-col items-center justify-center text-center transition-all duration-300 ease-out group 
         ${shapeClass} ${borderClass} ${bgClass}
+        ${isImage && 'pointer-events-auto'}
         ${!isImage && 'p-4'} 
         ${isEditing ? 'select-text cursor-auto' : 'select-none'}
         ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2' : 
@@ -253,17 +617,6 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
             </div>
         )}
         
-        {/* Image Resize Handle */}
-        {isImage && isEditing && (
-            <div 
-                className="absolute -right-3 -bottom-3 bg-blue-500 text-white p-1.5 rounded-full shadow-lg cursor-se-resize z-50 animate-in fade-in pointer-events-auto hover:scale-110"
-                onMouseDown={(e) => onResizeStart(e, item.id)}
-                title="Resize"
-            >
-                <Scaling size={14} />
-            </div>
-        )}
-
         {/* URL Link Button (Only for Memos with URL in View Mode) */}
         {isMemo && item.url && !isEditing && (
             <div 
@@ -287,6 +640,9 @@ const StickyNote = ({ item, onMouseDown, onDelete, onChangeColor, onUpdateText, 
                 <img 
                     src={item.imageUrl} 
                     alt="Uploaded" 
+                    loading="lazy"
+                    decoding="async"
+                    draggable="false"
                     className="w-full h-full object-cover rounded-lg shadow-sm pointer-events-none" 
                 />
             ) : (
@@ -397,21 +753,68 @@ const ConnectionOverlay = ({ connection, from, to, onDelete, offset, onMouseDown
   );
 };
 
+const ImageControlsOverlay = ({ item, onResizeStart, onImageLayerChange }) => {
+  if (!item) return null;
+  const styleInfo = getNoteStyle(item.text, item.type, item.width, item.height);
+
+  return (
+    <div
+      className="absolute pointer-events-none z-[1200]"
+      style={{
+        left: item.x,
+        top: item.y,
+        width: styleInfo.width,
+        height: styleInfo.height
+      }}
+    >
+      <div
+        className="absolute -left-3 -top-3 flex overflow-hidden rounded-full border border-slate-200 bg-white shadow-xl pointer-events-auto"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button onClick={() => onImageLayerChange(item.id, 'back')} className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Send backward">
+          <ChevronDown size={14} />
+        </button>
+        <button onClick={() => onImageLayerChange(item.id, 'front')} className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Bring forward">
+          <ChevronUp size={14} />
+        </button>
+        <button onClick={() => onImageLayerChange(item.id, 'bottom')} className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Send to back">
+          <ChevronsDown size={14} />
+        </button>
+        <button onClick={() => onImageLayerChange(item.id, 'top')} className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Bring to front">
+          <ChevronsUp size={14} />
+        </button>
+      </div>
+
+      <div
+        className="absolute -right-3 -bottom-3 bg-blue-500 text-white p-1.5 rounded-full shadow-xl cursor-se-resize pointer-events-auto hover:scale-110 transition-transform"
+        onMouseDown={(e) => onResizeStart(e, item.id)}
+        title="Resize"
+      >
+        <Scaling size={14} />
+      </div>
+    </div>
+  );
+};
+
 export default function KJAnalysisBoard() {
   const [items, setItems] = useState([]);
   const [connections, setConnections] = useState([]);
   const [boardName, setBoardName] = useState('Untitled Analysis');
+  const [boardId, setBoardId] = useState(() => createBoardId());
   const boardRef = useRef(null); 
   const contentRef = useRef(null); 
   const fileInputRef = useRef(null);
   const imageInputRef = useRef(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
+  const saveHandlerRef = useRef(null);
+  const saveFeedbackTimerRef = useRef(null);
   
   const [editingId, setEditingId] = useState(null);
   const [editingConnId, setEditingConnId] = useState(null);
   const [unlinkingId, setUnlinkingId] = useState(null); 
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState(null);
   
   const hoverTimeoutRef = useRef(null); 
   const hoverCandidateIdRef = useRef(null); 
@@ -420,6 +823,7 @@ export default function KJAnalysisBoard() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [lassoPoints, setLassoPoints] = useState([]); 
   const [isLassoing, setIsLassoing] = useState(false);
+  const [isImageDragOver, setIsImageDragOver] = useState(false);
   
   const [dragState, setDragState] = useState({ 
     id: null, type: null, startX: 0, startY: 0, 
@@ -445,32 +849,123 @@ export default function KJAnalysisBoard() {
     });
 
     // Init with one blank note if empty
-    if (items.length === 0) {
-        setItems([{ id: `manual-${Date.now()}`, text: "", count: 0, type: 'noun', color: POS_TYPES.NOUN.color, borderColor: POS_TYPES.NOUN.borderColor, strokeColor: POS_TYPES.NOUN.strokeColor, gradientText: POS_TYPES.NOUN.gradientText, x: 500, y: 300, groupId: null }]);
-    }
+    setItems(prev => prev.length === 0
+        ? [{ id: `manual-${Date.now()}`, text: "", count: 0, type: 'noun', color: POS_TYPES.NOUN.color, borderColor: POS_TYPES.NOUN.borderColor, strokeColor: POS_TYPES.NOUN.strokeColor, gradientText: POS_TYPES.NOUN.gradientText, x: 500, y: 300, groupId: null }]
+        : prev
+    );
+  }, []);
+
+  useEffect(() => () => {
+      clearTimeout(saveFeedbackTimerRef.current);
   }, []);
 
   // --- History Logic ---
-  const saveToHistory = (currentItems, currentConnections) => {
+  const saveToHistory = useCallback((currentItems, currentConnections) => {
       setHistory(prev => {
-          const newHistory = [...prev, { items: JSON.parse(JSON.stringify(currentItems)), connections: JSON.parse(JSON.stringify(currentConnections)) }];
+          const newHistory = [...prev, cloneBoardState(currentItems, currentConnections)];
           if (newHistory.length > 30) return newHistory.slice(1);
           return newHistory;
       });
-  };
+  }, []);
 
-  const handleUndo = () => {
+  const handleUndo = useCallback(() => {
       if (history.length === 0) return;
       const lastState = history[history.length - 1];
       if (!lastState || !lastState.items) return; 
       setHistory(prev => prev.slice(0, -1));
       setItems(lastState.items);
       setConnections(lastState.connections || []);
+  }, [history]);
+
+  const showSaveFeedback = useCallback((message = 'Saved') => {
+      setSaveFeedback(message);
+      clearTimeout(saveFeedbackTimerRef.current);
+      saveFeedbackTimerRef.current = setTimeout(() => setSaveFeedback(null), 1800);
+  }, []);
+
+  // FIX: Get center relative to content board using contentRef
+  // IMPORTANT: Reverting to boardRef scroll logic because contentRef logic was for bordered
+  const getViewportCenter = useCallback(() => {
+    if (boardRef.current) {
+        const container = boardRef.current;
+        const x = container.scrollLeft + container.clientWidth / 2;
+        const y = container.scrollTop + container.clientHeight / 2;
+        return {
+            x: x + (Math.random() - 0.5) * 40,
+            y: y + (Math.random() - 0.5) * 40
+        };
+    }
+    return { x: 500, y: 300 };
+  }, []);
+
+  // --- Image Helpers ---
+  const getBoardPointFromEvent = useCallback((e) => {
+    if (!contentRef.current) return null;
+    const rect = contentRef.current.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }, []);
+
+  const getImageFilesFromDataTransfer = (dataTransfer) => {
+    if (!dataTransfer) return [];
+
+    const itemFiles = Array.from(dataTransfer.items || [])
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter(Boolean);
+
+    if (itemFiles.length > 0) return itemFiles;
+
+    return Array.from(dataTransfer.files || []).filter(file => file.type.startsWith('image/'));
   };
+
+  const hasFileDrag = (dataTransfer) => Array.from(dataTransfer?.types || []).includes('Files');
+
+  const processAndAddImage = useCallback(async (file, position, options = {}) => {
+    try {
+        if (!options.skipHistory) saveToHistory(items, connections);
+
+        const compressed = await compressImageFile(file);
+        const displaySize = getScaledSize(compressed.naturalWidth, compressed.naturalHeight, BOARD_IMAGE_MAX_SIZE);
+        const pos = position || getViewportCenter();
+
+        setItems(prev => {
+            const nextLayer = prev.reduce((max, current, index) => {
+                if (current.type !== 'image') return max;
+                return Math.max(max, current.imageLayer ?? index);
+            }, -1) + 1;
+
+            return [...prev, {
+                id: `img-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                type: 'image',
+                imageUrl: compressed.dataUrl,
+                width: displaySize.width,
+                height: displaySize.height,
+                x: pos.x - displaySize.width / 2,
+                y: pos.y - displaySize.height / 2,
+                groupId: null,
+                imageLayer: nextLayer,
+                originalWidth: compressed.naturalWidth,
+                originalHeight: compressed.naturalHeight,
+                storedWidth: compressed.storedWidth,
+                storedHeight: compressed.storedHeight,
+                compressedBytes: compressed.compressedBytes
+            }];
+        });
+    } catch (err) {
+        console.error("Image import failed:", err);
+        alert("Failed to import image");
+    }
+  }, [connections, getViewportCenter, items, saveToHistory]);
 
   // --- Keyboard Shortcuts & Paste ---
   useEffect(() => {
     const handleKeyDown = (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            saveHandlerRef.current?.();
+            return;
+        }
+
         if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -484,7 +979,7 @@ export default function KJAnalysisBoard() {
                 saveToHistory(items, connections);
                 setItems(prev => prev.filter(item => !selectedIds.has(item.id)));
                 setConnections(prev => prev.filter(c => !selectedIds.has(c.fromId) && !selectedIds.has(c.toId)));
-                setSelectedIds(new Set()); 
+                setSelectedIds(new Set());
             }
         }
 
@@ -493,11 +988,11 @@ export default function KJAnalysisBoard() {
                 const ids = Array.from(selectedIds);
                 const fromId = ids[0];
                 const toId = ids[1];
-                
+
                 saveToHistory(items, connections);
                 const existingCount = connections.filter(c => (c.fromId === fromId && c.toId === toId) || (c.fromId === toId && c.toId === fromId)).length;
                 const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
-                setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: fromId, toId: toId, label: "", controlOffset: {x: shift, y: shift} }]);
+                setConnections(prev => [...prev, createLayeredConnection(prev, { id: `conn-${Date.now()}`, fromId: fromId, toId: toId, label: "", controlOffset: {x: shift, y: shift} })]);
             } else if (selectedIds.size === 1) {
                 const fromId = Array.from(selectedIds)[0];
                 const item = items.find(i => i.id === fromId);
@@ -505,7 +1000,7 @@ export default function KJAnalysisBoard() {
                     const rect = contentRef.current.getBoundingClientRect();
                     const mouseX = mousePosRef.current.x - rect.left;
                     const mouseY = mousePosRef.current.y - rect.top;
-                    
+
                     setDragState({
                         id: null, type: null, isConnecting: true, startConnId: fromId,
                         startX: mousePosRef.current.x, startY: mousePosRef.current.y,
@@ -519,17 +1014,17 @@ export default function KJAnalysisBoard() {
 
     const handlePaste = (e) => {
         if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
-  
+
         const clipboardItems = (e.clipboardData || e.originalEvent.clipboardData).items;
         let blob = null;
-  
+
         for (let i = 0; i < clipboardItems.length; i++) {
           if (clipboardItems[i].type.indexOf("image") === 0) {
             blob = clipboardItems[i].getAsFile();
             break;
           }
         }
-  
+
         if (blob) {
           e.preventDefault();
           processAndAddImage(blob);
@@ -542,41 +1037,7 @@ export default function KJAnalysisBoard() {
         window.removeEventListener('keydown', handleKeyDown);
         window.removeEventListener('paste', handlePaste);
     };
-  }, [selectedIds, items, connections, history]); 
-
-  // --- Image Helpers ---
-  const processAndAddImage = (file) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-            const maxSize = 300; 
-            let w = img.width;
-            let h = img.height;
-            if (w > h) {
-                if (w > maxSize) { h = Math.round(h * (maxSize / w)); w = maxSize; }
-            } else {
-                if (h > maxSize) { w = Math.round(w * (maxSize / h)); h = maxSize; }
-            }
-            
-            saveToHistory(items, connections);
-            const pos = getViewportCenter();
-            const newImage = { 
-                id: `img-${Date.now()}`, 
-                type: 'image', 
-                imageUrl: event.target.result, 
-                width: w, 
-                height: h,
-                x: pos.x - w/2, 
-                y: pos.y - h/2,
-                groupId: null 
-            };
-            setItems(prev => [...prev, newImage]);
-        };
-        img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
+  }, [connections, handleUndo, items, processAndAddImage, saveToHistory, selectedIds]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -585,31 +1046,100 @@ export default function KJAnalysisBoard() {
     e.target.value = '';
   };
 
-  const handleSaveToFile = () => {
-    const dateStr = new Date().toISOString().split('T')[0];
-    const data = { boardName, items, connections, date: Date.now() }; 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${boardName}_${dateStr}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleBoardDragOver = (e) => {
+    const imageFiles = getImageFilesFromDataTransfer(e.dataTransfer);
+    if (imageFiles.length === 0 && !hasFileDrag(e.dataTransfer)) return;
+
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsImageDragOver(true);
   };
+
+  const handleBoardDragLeave = (e) => {
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+    setIsImageDragOver(false);
+  };
+
+  const handleBoardDrop = (e) => {
+    const imageFiles = getImageFilesFromDataTransfer(e.dataTransfer);
+    if (imageFiles.length === 0) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    setIsImageDragOver(false);
+
+    const dropPoint = getBoardPointFromEvent(e) || getViewportCenter();
+    saveToHistory(items, connections);
+
+    imageFiles.forEach((file, index) => {
+        processAndAddImage(file, {
+            x: dropPoint.x + index * 24,
+            y: dropPoint.y + index * 24
+        }, { skipHistory: true });
+    });
+  };
+
+  const handleSaveToFile = useCallback(async () => {
+    const dateStr = getLocalDateKey();
+    const fileName = `${sanitizeFileName(boardName)}_${dateStr}.json`;
+    const data = { boardId, boardName, items, connections, date: Date.now(), savedDate: dateStr };
+    const serialized = JSON.stringify(data, null, 2);
+
+    if (window.showSaveFilePicker && window.indexedDB) {
+        const handleKey = getSaveHandleKey(boardId, dateStr);
+
+        try {
+            let handle = await getStoredSaveHandle(handleKey);
+
+            if (handle && !(await verifyWritablePermission(handle))) {
+                await deleteStoredSaveHandle(handleKey);
+                handle = null;
+            }
+
+            if (!handle) {
+                handle = await window.showSaveFilePicker({
+                    suggestedName: fileName,
+                    types: [{
+                        description: 'Final Board JSON',
+                        accept: { 'application/json': ['.json'] }
+                    }]
+                });
+            }
+
+            await writeTextToFileHandle(handle, serialized);
+            try {
+                await storeSaveHandle(handleKey, handle);
+            } catch (storeErr) {
+                console.warn("Could not remember save location:", storeErr);
+            }
+            showSaveFeedback();
+            return;
+        } catch (err) {
+            if (err?.name === 'AbortError') return;
+            console.error("Direct save failed, falling back to download:", err);
+        }
+    }
+
+    downloadJsonFile(serialized, fileName);
+    showSaveFeedback();
+  }, [boardId, boardName, connections, items, showSaveFeedback]);
+
+  saveHandlerRef.current = handleSaveToFile;
 
   const handleLoadFromFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const parsed = JSON.parse(event.target.result);
         if (parsed.items && Array.isArray(parsed.items)) {
            saveToHistory(items, connections); 
-           setItems(parsed.items);
+           const normalizedItems = await normalizeLoadedItems(parsed.items);
+           setItems(normalizedItems);
            setConnections(parsed.connections || []);
+           setBoardId(parsed.boardId || createBoardId());
            if (parsed.boardName) setBoardName(parsed.boardName); 
         } else {
            alert("Invalid file format");
@@ -668,7 +1198,7 @@ export default function KJAnalysisBoard() {
       } catch (err) { console.error("Export failed:", err); alert("Export failed, please try again"); } finally { setIsExporting(false); }
   };
 
-  const clearBoard = () => { if(confirm('Are you sure you want to clear the board?')) { saveToHistory(items, connections); setItems([]); setConnections([]); setBoardName('Untitled Analysis'); } };
+  const clearBoard = () => { if(confirm('Are you sure you want to clear the board?')) { saveToHistory(items, connections); setItems([]); setConnections([]); setBoardName('Untitled Analysis'); setBoardId(createBoardId()); } };
   const handleDeleteItem = (id) => { saveToHistory(items, connections); setItems(items.filter(i => i.id !== id)); setConnections(conn => conn.filter(c => c.fromId !== id && c.toId !== id)); };
   const handleUnlinkItem = (id) => { saveToHistory(items, connections); setUnlinkingId(id); setTimeout(() => { setItems(prev => prev.map(i => i.id === id ? { ...i, groupId: null } : i)); setUnlinkingId(null); }, 300); };
   const handleDeleteConnection = (id) => { saveToHistory(items, connections); setConnections(prev => prev.filter(c => c.id !== id)); };
@@ -678,22 +1208,86 @@ export default function KJAnalysisBoard() {
   const handleUpdateText = (id, newText, newUrl) => { 
       setItems(items.map(i => i.id === id ? { ...i, text: newText, url: newUrl !== undefined ? newUrl : i.url } : i)); 
   };
-  
-  // FIX: Get center relative to content board using contentRef
-  // IMPORTANT: Reverting to boardRef scroll logic because contentRef logic was for bordered
-  const getViewportCenter = () => {
-    if (boardRef.current) {
-        const container = boardRef.current;
-        const x = container.scrollLeft + container.clientWidth / 2;
-        const y = container.scrollTop + container.clientHeight / 2;
-        return { 
-            x: x + (Math.random() - 0.5) * 40, 
-            y: y + (Math.random() - 0.5) * 40 
-        };
-    }
-    return { x: 500, y: 300 }; 
+
+  const handleImageLayerChange = (id, action) => {
+      saveToHistory(items, connections);
+
+      setItems(prev => {
+          const imageOrder = prev
+              .map((item, sourceIndex) => ({ item, sourceIndex }))
+              .filter(({ item }) => item.type === 'image')
+              .sort((a, b) => {
+                  const aLayer = a.item.imageLayer ?? a.sourceIndex;
+                  const bLayer = b.item.imageLayer ?? b.sourceIndex;
+                  return aLayer === bLayer ? a.sourceIndex - b.sourceIndex : aLayer - bLayer;
+              });
+
+          const currentIndex = imageOrder.findIndex(({ item }) => item.id === id);
+          if (currentIndex === -1) return prev;
+
+          const nextOrder = [...imageOrder];
+          const [target] = nextOrder.splice(currentIndex, 1);
+          let nextIndex = currentIndex;
+
+          if (action === 'top') nextIndex = nextOrder.length;
+          if (action === 'bottom') nextIndex = 0;
+          if (action === 'front') nextIndex = Math.min(currentIndex + 1, nextOrder.length);
+          if (action === 'back') nextIndex = Math.max(currentIndex - 1, 0);
+
+          nextOrder.splice(nextIndex, 0, target);
+          const layerById = new Map(nextOrder.map(({ item }, index) => [item.id, index]));
+
+          return prev.map(item => item.type === 'image'
+              ? { ...item, imageLayer: layerById.get(item.id) ?? item.imageLayer ?? 0 }
+              : item
+          );
+      });
   };
 
+  const handleConnectionLayerChange = (id, action) => {
+      saveToHistory(items, connections);
+
+      setConnections(prev => {
+          const targetConnection = prev.find(connection => connection.id === id);
+          if (!targetConnection) return prev;
+
+          const targetPlane = action === 'bottom'
+              ? CONNECTION_PLANE_BELOW_IMAGES
+              : action === 'top'
+                ? CONNECTION_PLANE_ABOVE_IMAGES
+                : getConnectionPlane(targetConnection);
+
+          const planeAdjusted = prev.map(connection => connection.id === id
+              ? { ...connection, connectionPlane: targetPlane }
+              : connection
+          );
+
+          const orderedConnections = getLayeredConnections(planeAdjusted, targetPlane);
+          const currentIndex = orderedConnections.findIndex(({ connection }) => connection.id === id);
+          if (currentIndex === -1) return planeAdjusted;
+
+          const nextOrder = [...orderedConnections];
+          const [target] = nextOrder.splice(currentIndex, 1);
+          let nextIndex = currentIndex;
+
+          if (action === 'top') nextIndex = nextOrder.length;
+          if (action === 'bottom') nextIndex = 0;
+          if (action === 'front') nextIndex = Math.min(currentIndex + 1, nextOrder.length);
+          if (action === 'back') nextIndex = Math.max(currentIndex - 1, 0);
+
+          nextOrder.splice(nextIndex, 0, target);
+          const layerById = new Map(nextOrder.map(({ connection }, index) => [connection.id, index]));
+
+          return planeAdjusted.map(connection => getConnectionPlane(connection) === targetPlane
+              ? {
+                  ...connection,
+                  connectionLayer: layerById.get(connection.id) ?? connection.connectionLayer ?? 0
+              }
+              : connection
+          );
+      });
+  };
+  
   const handleAddNote = (x, y) => {
     saveToHistory(items, connections);
     let pos = { x, y };
@@ -745,7 +1339,7 @@ export default function KJAnalysisBoard() {
       const item = items.find(i => i.id === id);
       if (!item) return;
 
-      snapshotRef.current = { items: JSON.parse(JSON.stringify(items)), connections: JSON.parse(JSON.stringify(connections)) };
+      snapshotRef.current = cloneBoardState(items, connections);
 
       setDragState({
           id: id,
@@ -761,7 +1355,7 @@ export default function KJAnalysisBoard() {
   };
 
   const handleEditStart = (id, type) => {
-      snapshotRef.current = { items: JSON.parse(JSON.stringify(items)), connections: JSON.parse(JSON.stringify(connections)) };
+      snapshotRef.current = cloneBoardState(items, connections);
       if (type === 'conn') setEditingConnId(id);
       else setEditingId(id);
   };
@@ -769,12 +1363,7 @@ export default function KJAnalysisBoard() {
   const handleEditEnd = () => {
       const oldState = snapshotRef.current;
       if (oldState) {
-          const currentItemsStr = JSON.stringify(items);
-          const oldItemsStr = JSON.stringify(oldState.items);
-          const currentConnsStr = JSON.stringify(connections);
-          const oldConnsStr = JSON.stringify(oldState.connections);
-
-          if (currentItemsStr !== oldItemsStr || currentConnsStr !== oldConnsStr) {
+          if (!areBoardStatesEqual(items, connections, oldState)) {
               saveToHistory(oldState.items, oldState.connections);
           }
       }
@@ -800,7 +1389,7 @@ export default function KJAnalysisBoard() {
                 saveToHistory(items, connections); 
                 const existingCount = connections.filter(c => (c.fromId === dragState.startConnId && c.toId === target.id) || (c.fromId === target.id && c.toId === dragState.startConnId)).length;
                 const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
-                setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} }]);
+                setConnections(prev => [...prev, createLayeredConnection(prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} })]);
                 setDragState({ ...dragState, isConnecting: false, startConnId: null });
                 return;
              }
@@ -822,7 +1411,7 @@ export default function KJAnalysisBoard() {
     
     if (type === 'connectionHandle') {
         e.preventDefault();
-        snapshotRef.current = { items: JSON.parse(JSON.stringify(items)), connections: JSON.parse(JSON.stringify(connections)) };
+        snapshotRef.current = cloneBoardState(items, connections);
 
         const conn = connections.find(c => c.id === id);
         const initOffset = conn?.controlOffset || {x: 0, y: 0};
@@ -841,7 +1430,7 @@ export default function KJAnalysisBoard() {
     const item = items.find(i => i.id === id);
     if(!item) return;
 
-    snapshotRef.current = { items: JSON.parse(JSON.stringify(items)), connections: JSON.parse(JSON.stringify(connections)) };
+    snapshotRef.current = cloneBoardState(items, connections);
 
     let initialPositions = {};
     const newSelectedIds = new Set(selectedIds);
@@ -995,7 +1584,7 @@ export default function KJAnalysisBoard() {
                saveToHistory(items, connections); 
                const existingCount = connections.filter(c => (c.fromId === dragState.startConnId && c.toId === target.id) || (c.fromId === target.id && c.toId === dragState.startConnId)).length;
                const shift = existingCount === 0 ? 0 : (existingCount % 2 === 0 ? -1 : 1) * Math.ceil(existingCount/2) * 50;
-               setConnections(prev => [...prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} }]); 
+               setConnections(prev => [...prev, createLayeredConnection(prev, { id: `conn-${Date.now()}`, fromId: dragState.startConnId, toId: target.id, label: "", controlOffset: {x: shift, y: shift} })]); 
             }
         }
     }
@@ -1072,6 +1661,15 @@ export default function KJAnalysisBoard() {
       <input type="file" ref={imageInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
       <GooeyFilters />
+
+      {isExporting && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/20 no-export">
+          <div className="flex items-center gap-3 rounded-xl bg-white/95 px-4 py-3 text-sm font-medium text-slate-700 shadow-xl">
+            <RefreshCw className="animate-spin text-blue-600" size={18} />
+            <span>Exporting...</span>
+          </div>
+        </div>
+      )}
       
       {/* 3. Bottom-Center Toolbar */}
       <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-[1000] flex items-center gap-1 bg-white/80 backdrop-blur-md shadow-xl border border-blue-200 rounded-full px-2 py-1.5 transition-all hover:shadow-2xl select-none">
@@ -1100,7 +1698,7 @@ export default function KJAnalysisBoard() {
 
              {/* File Group */}
              <div className="flex items-center gap-0.5 border-r border-blue-200/60 pr-1 mr-1">
-                 <button onClick={handleSaveToFile} className="flex items-center justify-center w-9 h-9 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Save Data (.json)"><Save size={20}/></button>
+                 <button onClick={handleSaveToFile} className="flex items-center justify-center w-9 h-9 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Save Data (.json) - Ctrl+S"><Save size={20}/></button>
                  <button onClick={triggerFileInput} className="flex items-center justify-center w-9 h-9 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Load Data (.json)"><Upload size={20}/></button>
              </div>
              
@@ -1115,15 +1713,16 @@ export default function KJAnalysisBoard() {
              <div className="relative flex items-center gap-0.5">
                 <button 
                     onClick={() => setShowExportMenu(!showExportMenu)}
-                    className="flex items-center justify-center w-9 h-9 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                    disabled={isExporting}
+                    className="flex items-center justify-center w-9 h-9 text-blue-600 hover:bg-blue-50 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     title="Export"
                 >
                     <Download size={20}/>
                 </button>
                 {showExportMenu && (
                     <div className="absolute bottom-full right-0 mb-2 bg-white/90 backdrop-blur-md border border-slate-200 rounded-xl shadow-xl flex flex-col p-1 z-[1000] min-w-[50px]">
-                        <button onClick={() => handleExport('png')} className="flex items-center justify-center p-2 hover:bg-slate-100 rounded-lg text-slate-700 transition-colors" title="PNG"><ImageIcon size={20}/></button>
-                        <button onClick={() => handleExport('pdf')} className="flex items-center justify-center p-2 hover:bg-slate-100 rounded-lg text-slate-700 transition-colors" title="PDF"><FileType size={20}/></button>
+                        <button disabled={isExporting} onClick={() => handleExport('png')} className="flex items-center justify-center p-2 hover:bg-slate-100 rounded-lg text-slate-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50" title="PNG"><ImageIcon size={20}/></button>
+                        <button disabled={isExporting} onClick={() => handleExport('pdf')} className="flex items-center justify-center p-2 hover:bg-slate-100 rounded-lg text-slate-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50" title="PDF"><FileType size={20}/></button>
                     </div>
                 )}
                 
@@ -1131,8 +1730,27 @@ export default function KJAnalysisBoard() {
              </div>
       </div>
 
+      {saveFeedback && (
+        <div className="absolute bottom-24 left-1/2 z-[1200] flex -translate-x-1/2 items-center gap-2 rounded-full border border-emerald-200 bg-white/95 px-3 py-2 text-sm font-medium text-emerald-700 shadow-xl no-export pointer-events-none">
+          <Check size={16} />
+          <span>{saveFeedback}</span>
+        </div>
+      )}
+
       {/* Main Board Area */}
-      <main className="h-full w-full relative overflow-auto bg-stone-100 select-none" ref={boardRef} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDragStart={(e) => e.preventDefault()}>
+      <main
+        className="h-full w-full relative overflow-auto bg-stone-100 select-none"
+        ref={boardRef}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onDragOver={handleBoardDragOver}
+        onDragLeave={handleBoardDragLeave}
+        onDrop={handleBoardDrop}
+        onDragStart={(e) => e.preventDefault()}
+      >
+        {isImageDragOver && (
+          <div className="absolute inset-4 z-[900] pointer-events-none rounded-xl border-2 border-dashed border-blue-400 bg-blue-500/5 no-export" />
+        )}
         <div 
             ref={contentRef}
             id="kj-board-canvas"
@@ -1141,15 +1759,80 @@ export default function KJAnalysisBoard() {
             onDoubleClick={handleBoardDoubleClick}
             onMouseDown={(e) => handleMouseDown(e, null, 'board')} 
         >
-             {/* Gooey Layer */}
+             {/* Connection Layer Below Images */}
+             <div className="absolute inset-0 pointer-events-none z-[0]" style={{ filter: 'url(#goo)' }}>
+                <svg className="absolute inset-0 w-full h-full overflow-visible">
+                    {getLayeredConnections(connections, CONNECTION_PLANE_BELOW_IMAGES).map(({ connection: conn }) => {
+                        const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId);
+                        if (!from || !to) return null;
+                        const fromColor = getConnectionColor(from);
+                        const toColor = getConnectionColor(to);
+                        const visualPoints = getConnectionVisualPoints(from, to);
+                        return <GooeyLine key={`goo-conn-under-${conn.id}`} id={conn.id} from={visualPoints.from} to={visualPoints.to} fromColor={fromColor} toColor={toColor} offset={conn.controlOffset || {x:0,y:0}} label={conn.label} />;
+                    })}
+                </svg>
+                {items.filter(item => item.type !== 'memo' && item.type !== 'image' && connections.some(conn => (
+                    getConnectionPlane(conn) === CONNECTION_PLANE_BELOW_IMAGES
+                    && (conn.fromId === item.id || conn.toId === item.id)
+                ))).map(item => (
+                    <BlobBackground key={`under-blob-${item.id}`} item={item} />
+                ))}
+             </div>
+
+             <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-[0] overflow-visible">
+                {getLayeredConnections(connections, CONNECTION_PLANE_BELOW_IMAGES).map(({ connection: conn }) => {
+                    const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId); if(!from || !to) return null;
+                    if (editingConnId === conn.id) return null;
+                    const visualPoints = getConnectionVisualPoints(from, to);
+                    return <ConnectionOverlay 
+                        key={`under-overlay-${conn.id}`} 
+                        connection={conn} 
+                        from={visualPoints.from} 
+                        to={visualPoints.to} 
+                        offset={conn.controlOffset || {x:0,y:0}}
+                        onDelete={() => handleDeleteConnection(conn.id)} 
+                        onEdit={() => handleEditStart(conn.id, 'conn')} 
+                        onUpdate={handleUpdateConnectionLabel} 
+                        isEditing={false}
+                        setEditingConnId={setEditingConnId} 
+                        onMouseDownHandle={handleMouseDown}
+                        onDoubleClickEdit={(selectedId) => handleEditStart(selectedId, 'conn')}
+                        label={conn.label} 
+                    />;
+                })}
+             </svg>
+
+             {/* Image Layer - images sort among themselves between under/over connection planes */}
+             <div className="absolute inset-0 z-[1] pointer-events-none">
+               {items.filter(item => item.type === 'image').map(item => (
+                 <StickyNote
+                  key={item.id}
+                  item={item}
+                  onMouseDown={handleMouseDown}
+                  onUpdateText={handleUpdateText}
+                  isSelected={selectedIds.has(item.id) || dragState.id === item.id || dragState.startConnId === item.id}
+                  isTargeted={dragState.targetId === item.id}
+                  isEditing={editingId === item.id}
+                  setEditingId={(selectedId) => selectedId ? handleEditStart(selectedId, 'note') : handleEditEnd()}
+                  isUnlinking={unlinkingId === item.id}
+                  onDelete={handleDeleteItem}
+                  onChangeColor={handleColorChange}
+                  onUnlink={handleUnlinkItem}
+                  onStartConnection={handleStartConnection}
+                 />
+               ))}
+             </div>
+
+             {/* Connection Layer Above Images */}
              <div className="absolute inset-0 pointer-events-none z-[5]" style={{ filter: 'url(#goo)' }}>
                 <svg className="absolute inset-0 w-full h-full overflow-visible">
-                    {connections.map(conn => {
+                    {getLayeredConnections(connections, CONNECTION_PLANE_ABOVE_IMAGES).map(({ connection: conn }) => {
                         const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId);
                         if (!from || !to) return null; // Safe check to prevent crash
-                        const fromColor = from ? (from.gradientText || 'text-slate-400') : 'text-slate-400';
-                        const toColor = to ? (to.gradientText || 'text-slate-400') : 'text-slate-400';
-                        return <GooeyLine key={`goo-conn-${conn.id}`} id={conn.id} from={getCenter(from)} to={getCenter(to)} fromColor={fromColor} toColor={toColor} offset={conn.controlOffset || {x:0,y:0}} label={conn.label} />;
+                        const fromColor = getConnectionColor(from);
+                        const toColor = getConnectionColor(to);
+                        const visualPoints = getConnectionVisualPoints(from, to);
+                        return <GooeyLine key={`goo-conn-${conn.id}`} id={conn.id} from={visualPoints.from} to={visualPoints.to} fromColor={fromColor} toColor={toColor} offset={conn.controlOffset || {x:0,y:0}} label={conn.label} />;
                     })}
                     {dragState.isConnecting && dragState.startConnId && items.find(i=>i.id === dragState.startConnId) && (
                         <line x1={items.find(i=>i.id === dragState.startConnId).x + 72} y1={items.find(i=>i.id === dragState.startConnId).y + (items.find(i=>i.id === dragState.startConnId).type==='memo'?40:72)} x2={dragState.currMouseX} y2={dragState.currMouseY} stroke="currentColor" strokeWidth="18" strokeLinecap="round" className="stroke-indigo-300 opacity-80" />
@@ -1173,7 +1856,8 @@ export default function KJAnalysisBoard() {
                 const from = items.find(i => i.id === conn.fromId);
                 const to = items.find(i => i.id === conn.toId);
                 if (!from || !to) return null;
-                const curveData = getCurvePoints(from, to, conn.controlOffset || {x:0,y:0});
+                const visualPoints = getConnectionVisualPoints(from, to);
+                const curveData = getCurvePoints(visualPoints.from, visualPoints.to, conn.controlOffset || {x:0,y:0});
                 
                 return (
                     <div 
@@ -1184,6 +1868,26 @@ export default function KJAnalysisBoard() {
                             transform: 'translate(-50%, -50%)' 
                         }}
                     >
+                        <div
+                            className="absolute left-1/2 -top-9 flex -translate-x-1/2 overflow-hidden rounded-full border border-slate-200 bg-white shadow-xl pointer-events-auto"
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            }}
+                        >
+                            <button onClick={() => handleConnectionLayerChange(conn.id, 'back')} className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Send backward">
+                                <ChevronDown size={14} />
+                            </button>
+                            <button onClick={() => handleConnectionLayerChange(conn.id, 'front')} className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Bring forward">
+                                <ChevronUp size={14} />
+                            </button>
+                            <button onClick={() => handleConnectionLayerChange(conn.id, 'bottom')} className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Send below images">
+                                <ChevronsDown size={14} />
+                            </button>
+                            <button onClick={() => handleConnectionLayerChange(conn.id, 'top')} className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-colors" title="Bring above images">
+                                <ChevronsUp size={14} />
+                            </button>
+                        </div>
                         <input
                             autoFocus
                             className="w-32 px-2 py-1 text-center text-xs border border-blue-500 rounded shadow-lg focus:outline-none bg-white select-text pointer-events-auto"
@@ -1199,15 +1903,16 @@ export default function KJAnalysisBoard() {
              })()}
 
              <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-[6] overflow-visible">
-                {connections.map(conn => {
+                {getLayeredConnections(connections, CONNECTION_PLANE_ABOVE_IMAGES).map(({ connection: conn }) => {
                     const from = items.find(i => i.id === conn.fromId); const to = items.find(i => i.id === conn.toId); if(!from || !to) return null;
                     // Don't render overlay if editing (input is rendered above)
                     if (editingConnId === conn.id) return null;
+                    const visualPoints = getConnectionVisualPoints(from, to);
                     return <ConnectionOverlay 
                         key={conn.id} 
                         connection={conn} 
-                        from={getCenter(from)} 
-                        to={getCenter(to)} 
+                        from={visualPoints.from} 
+                        to={visualPoints.to} 
                         offset={conn.controlOffset || {x:0,y:0}}
                         onDelete={() => handleDeleteConnection(conn.id)} 
                         onEdit={() => handleEditStart(conn.id, 'conn')} 
@@ -1234,7 +1939,7 @@ export default function KJAnalysisBoard() {
                 </svg>
              )}
 
-             {items.map(item => (
+             {items.filter(item => item.type !== 'image').map(item => (
                <StickyNote 
                 key={item.id} 
                 item={item} 
@@ -1250,9 +1955,14 @@ export default function KJAnalysisBoard() {
                 onChangeColor={handleColorChange}
                 onUnlink={handleUnlinkItem}
                 onStartConnection={handleStartConnection} 
-                onResizeStart={handleResizeStart}
                />
              ))}
+
+             <ImageControlsOverlay
+                item={items.find(item => item.id === editingId && item.type === 'image')}
+                onResizeStart={handleResizeStart}
+                onImageLayerChange={handleImageLayerChange}
+             />
           </div>
       </main>
       
