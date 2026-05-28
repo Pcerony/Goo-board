@@ -43,6 +43,10 @@ const getConnectionColor = (item) => CONNECTION_COLORS[item?.type] || '#94a3b8';
 
 const clampBoardZoom = (zoom) => Math.min(MAX_BOARD_ZOOM, Math.max(MIN_BOARD_ZOOM, zoom));
 
+const isTextInputElement = (element) => (
+    ['INPUT', 'TEXTAREA', 'SELECT'].includes(element?.tagName) || element?.isContentEditable
+);
+
 const getNoteStyle = (text, type, customWidth, customHeight) => {
   if (type === 'image') {
       const w = customWidth || 200;
@@ -815,6 +819,8 @@ export default function KJAnalysisBoard() {
   const mousePosRef = useRef({ x: 0, y: 0 });
   const saveHandlerRef = useRef(null);
   const saveFeedbackTimerRef = useRef(null);
+  const isSpacePressedRef = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
   
   const [editingId, setEditingId] = useState(null);
   const [editingConnId, setEditingConnId] = useState(null);
@@ -823,6 +829,8 @@ export default function KJAnalysisBoard() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState(null);
   const [boardZoom, setBoardZoom] = useState(1);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
   
   const hoverTimeoutRef = useRef(null); 
   const hoverCandidateIdRef = useRef(null); 
@@ -915,7 +923,7 @@ export default function KJAnalysisBoard() {
     };
   }, [boardZoom]);
 
-  const updateBoardZoom = useCallback((nextZoom) => {
+  const updateBoardZoom = useCallback((nextZoom, anchorClientPoint = null) => {
     const container = boardRef.current;
     const resolvedZoom = clampBoardZoom(typeof nextZoom === 'function' ? nextZoom(boardZoom) : nextZoom);
 
@@ -924,13 +932,16 @@ export default function KJAnalysisBoard() {
         return;
     }
 
-    const centerX = (container.scrollLeft + container.clientWidth / 2) / boardZoom;
-    const centerY = (container.scrollTop + container.clientHeight / 2) / boardZoom;
+    const containerRect = container.getBoundingClientRect();
+    const anchorScreenX = anchorClientPoint ? anchorClientPoint.x - containerRect.left : container.clientWidth / 2;
+    const anchorScreenY = anchorClientPoint ? anchorClientPoint.y - containerRect.top : container.clientHeight / 2;
+    const anchorBoardX = (container.scrollLeft + anchorScreenX) / boardZoom;
+    const anchorBoardY = (container.scrollTop + anchorScreenY) / boardZoom;
 
     setBoardZoom(resolvedZoom);
     requestAnimationFrame(() => {
-        container.scrollLeft = centerX * resolvedZoom - container.clientWidth / 2;
-        container.scrollTop = centerY * resolvedZoom - container.clientHeight / 2;
+        container.scrollLeft = anchorBoardX * resolvedZoom - anchorScreenX;
+        container.scrollTop = anchorBoardY * resolvedZoom - anchorScreenY;
     });
   }, [boardZoom]);
 
@@ -994,13 +1005,20 @@ export default function KJAnalysisBoard() {
   // --- Keyboard Shortcuts & Paste ---
   useEffect(() => {
     const handleKeyDown = (e) => {
+        if (e.code === 'Space' && !isTextInputElement(document.activeElement)) {
+            e.preventDefault();
+            isSpacePressedRef.current = true;
+            setIsSpacePressed(true);
+            return;
+        }
+
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
             e.preventDefault();
             saveHandlerRef.current?.();
             return;
         }
 
-        if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+        if (isTextInputElement(document.activeElement)) return;
 
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
             e.preventDefault();
@@ -1045,7 +1063,7 @@ export default function KJAnalysisBoard() {
     };
 
     const handlePaste = (e) => {
-        if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+        if (isTextInputElement(document.activeElement)) return;
 
         const clipboardItems = (e.clipboardData || e.originalEvent.clipboardData).items;
         let blob = null;
@@ -1063,11 +1081,42 @@ export default function KJAnalysisBoard() {
         }
       };
 
+    const handleKeyUp = (e) => {
+        if (e.code !== 'Space') return;
+        isSpacePressedRef.current = false;
+        setIsSpacePressed(false);
+        setIsPanning(false);
+        setDragState(prev => prev.type === 'pan'
+            ? { ...prev, isDragging: false, type: null, hasMoved: false }
+            : prev
+        );
+    };
+
+    const handleWindowBlur = () => {
+        isSpacePressedRef.current = false;
+        setIsSpacePressed(false);
+        setIsPanning(false);
+    };
+
+    const handleWindowMouseUp = () => {
+        setIsPanning(false);
+        setDragState(prev => prev.type === 'pan'
+            ? { ...prev, isDragging: false, type: null, hasMoved: false }
+            : prev
+        );
+    };
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('paste', handlePaste);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('mouseup', handleWindowMouseUp);
     return () => {
         window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('keyup', handleKeyUp);
         window.removeEventListener('paste', handlePaste);
+        window.removeEventListener('blur', handleWindowBlur);
+        window.removeEventListener('mouseup', handleWindowMouseUp);
     };
   }, [connections, getBoardPointFromClient, handleUndo, items, processAndAddImage, saveToHistory, selectedIds]);
 
@@ -1109,6 +1158,18 @@ export default function KJAnalysisBoard() {
             y: dropPoint.y + index * 24
         }, { skipHistory: true });
     });
+  };
+
+  const handleBoardWheel = (e) => {
+    if (!isSpacePressedRef.current) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    const direction = e.deltaY < 0 ? 1 : -1;
+    updateBoardZoom(
+        current => current + direction * BOARD_ZOOM_STEP,
+        { x: e.clientX, y: e.clientY }
+    );
   };
 
   const handleSaveToFile = useCallback(async () => {
@@ -1406,7 +1467,37 @@ export default function KJAnalysisBoard() {
 
   const handleMouseDown = (e, id, type) => {
     e.stopPropagation();
-    if(e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'TEXTAREA') return;
+    if(isTextInputElement(e.target) || e.target.tagName === 'BUTTON') return;
+
+    if (isSpacePressedRef.current && e.button === 0) {
+        e.preventDefault();
+        if (editingId || editingConnId) handleEditEnd();
+        panStartRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            scrollLeft: boardRef.current?.scrollLeft || 0,
+            scrollTop: boardRef.current?.scrollTop || 0
+        };
+        setIsPanning(true);
+        setDragState({
+            id: null,
+            type: 'pan',
+            startX: e.clientX,
+            startY: e.clientY,
+            initItemX: 0,
+            initItemY: 0,
+            initOffset: {x: 0, y: 0},
+            targetId: null,
+            isDragging: true,
+            isConnecting: false,
+            startConnId: null,
+            currMouseX: 0,
+            currMouseY: 0,
+            initialPositions: {},
+            hasMoved: false
+        });
+        return;
+    }
     
     if (editingId || editingConnId) { 
         handleEditEnd();
@@ -1492,6 +1583,14 @@ export default function KJAnalysisBoard() {
 
   const handleMouseMove = (e) => {
     mousePosRef.current = { x: e.clientX, y: e.clientY };
+
+    if (dragState.type === 'pan') {
+        const container = boardRef.current;
+        if (!container) return;
+        container.scrollLeft = panStartRef.current.scrollLeft - (e.clientX - panStartRef.current.x);
+        container.scrollTop = panStartRef.current.scrollTop - (e.clientY - panStartRef.current.y);
+        return;
+    }
 
     if (isLassoing) {
         const point = getBoardPointFromClient(e.clientX, e.clientY);
@@ -1579,6 +1678,12 @@ export default function KJAnalysisBoard() {
 
   const handleMouseUp = (e) => {
     clearTimeout(hoverTimeoutRef.current); hoverCandidateIdRef.current = null; clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null;
+
+    if (dragState.type === 'pan') {
+        setIsPanning(false);
+        setDragState({ ...dragState, isDragging: false, type: null, hasMoved: false });
+        return;
+    }
     
     if (isLassoing) {
         setIsLassoing(false);
@@ -1795,10 +1900,11 @@ export default function KJAnalysisBoard() {
 
       {/* Main Board Area */}
       <main
-        className="board-scrollbar h-full w-full relative overflow-auto bg-stone-100 select-none"
+        className={`board-scrollbar h-full w-full relative overflow-auto bg-stone-100 select-none ${isPanning ? 'cursor-grabbing' : (isSpacePressed ? 'cursor-grab' : '')}`}
         ref={boardRef}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onWheel={handleBoardWheel}
         onDragOver={handleBoardDragOver}
         onDragLeave={handleBoardDragLeave}
         onDrop={handleBoardDrop}
@@ -1817,7 +1923,7 @@ export default function KJAnalysisBoard() {
         <div 
             ref={contentRef}
             id="kj-board-canvas"
-            className="relative bg-stone-100 cursor-default"
+            className="relative bg-stone-100 cursor-inherit"
             style={{
                 width: `${BOARD_WIDTH}px`,
                 height: `${BOARD_HEIGHT}px`,
