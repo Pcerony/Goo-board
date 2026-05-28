@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette, Download, MessageSquare, Undo2, RefreshCw, Scaling, ExternalLink, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown } from 'lucide-react';
+import { Plus, Trash2, BrainCircuit, MousePointer2, Link as LinkIcon, Unlink, StickyNote as MemoIcon, Check, Image as ImageIcon, FileType, Layout, Save, Upload, Palette, Download, MessageSquare, Undo2, RefreshCw, Scaling, ExternalLink, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown, ZoomIn, ZoomOut } from 'lucide-react';
 
 // NOTE: External Libraries injected dynamically via CDN
 const HTML2CANVAS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
@@ -11,6 +11,11 @@ const SAVE_HANDLE_DB_NAME = 'final-board-save-handles';
 const SAVE_HANDLE_STORE_NAME = 'daily-handles';
 const CONNECTION_PLANE_ABOVE_IMAGES = 'above-images';
 const CONNECTION_PLANE_BELOW_IMAGES = 'below-images';
+const BOARD_WIDTH = 2400;
+const BOARD_HEIGHT = 1600;
+const MIN_BOARD_ZOOM = 0.45;
+const MAX_BOARD_ZOOM = 1.6;
+const BOARD_ZOOM_STEP = 0.1;
 
 // --- Configuration ---
 const POS_TYPES = {
@@ -35,6 +40,8 @@ const CONNECTION_COLORS = {
 };
 
 const getConnectionColor = (item) => CONNECTION_COLORS[item?.type] || '#94a3b8';
+
+const clampBoardZoom = (zoom) => Math.min(MAX_BOARD_ZOOM, Math.max(MIN_BOARD_ZOOM, zoom));
 
 const getNoteStyle = (text, type, customWidth, customHeight) => {
   if (type === 'image') {
@@ -815,6 +822,7 @@ export default function KJAnalysisBoard() {
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState(null);
+  const [boardZoom, setBoardZoom] = useState(1);
   
   const hoverTimeoutRef = useRef(null); 
   const hoverCandidateIdRef = useRef(null); 
@@ -888,22 +896,48 @@ export default function KJAnalysisBoard() {
   const getViewportCenter = useCallback(() => {
     if (boardRef.current) {
         const container = boardRef.current;
-        const x = container.scrollLeft + container.clientWidth / 2;
-        const y = container.scrollTop + container.clientHeight / 2;
+        const x = (container.scrollLeft + container.clientWidth / 2) / boardZoom;
+        const y = (container.scrollTop + container.clientHeight / 2) / boardZoom;
         return {
             x: x + (Math.random() - 0.5) * 40,
             y: y + (Math.random() - 0.5) * 40
         };
     }
     return { x: 500, y: 300 };
-  }, []);
+  }, [boardZoom]);
+
+  const getBoardPointFromClient = useCallback((clientX, clientY) => {
+    if (!contentRef.current) return null;
+    const rect = contentRef.current.getBoundingClientRect();
+    return {
+        x: (clientX - rect.left) / boardZoom,
+        y: (clientY - rect.top) / boardZoom
+    };
+  }, [boardZoom]);
+
+  const updateBoardZoom = useCallback((nextZoom) => {
+    const container = boardRef.current;
+    const resolvedZoom = clampBoardZoom(typeof nextZoom === 'function' ? nextZoom(boardZoom) : nextZoom);
+
+    if (!container || resolvedZoom === boardZoom) {
+        setBoardZoom(resolvedZoom);
+        return;
+    }
+
+    const centerX = (container.scrollLeft + container.clientWidth / 2) / boardZoom;
+    const centerY = (container.scrollTop + container.clientHeight / 2) / boardZoom;
+
+    setBoardZoom(resolvedZoom);
+    requestAnimationFrame(() => {
+        container.scrollLeft = centerX * resolvedZoom - container.clientWidth / 2;
+        container.scrollTop = centerY * resolvedZoom - container.clientHeight / 2;
+    });
+  }, [boardZoom]);
 
   // --- Image Helpers ---
   const getBoardPointFromEvent = useCallback((e) => {
-    if (!contentRef.current) return null;
-    const rect = contentRef.current.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  }, []);
+    return getBoardPointFromClient(e.clientX, e.clientY);
+  }, [getBoardPointFromClient]);
 
   const getImageFilesFromDataTransfer = (dataTransfer) => {
     if (!dataTransfer) return [];
@@ -997,14 +1031,12 @@ export default function KJAnalysisBoard() {
                 const fromId = Array.from(selectedIds)[0];
                 const item = items.find(i => i.id === fromId);
                 if (item && contentRef.current) {
-                    const rect = contentRef.current.getBoundingClientRect();
-                    const mouseX = mousePosRef.current.x - rect.left;
-                    const mouseY = mousePosRef.current.y - rect.top;
+                    const boardPoint = getBoardPointFromClient(mousePosRef.current.x, mousePosRef.current.y) || getCenter(item);
 
                     setDragState({
                         id: null, type: null, isConnecting: true, startConnId: fromId,
                         startX: mousePosRef.current.x, startY: mousePosRef.current.y,
-                        currMouseX: mouseX, currMouseY: mouseY,
+                        currMouseX: boardPoint.x, currMouseY: boardPoint.y,
                         initItemX: 0, initItemY: 0
                     });
                 }
@@ -1037,7 +1069,7 @@ export default function KJAnalysisBoard() {
         window.removeEventListener('keydown', handleKeyDown);
         window.removeEventListener('paste', handlePaste);
     };
-  }, [connections, handleUndo, items, processAndAddImage, saveToHistory, selectedIds]);
+  }, [connections, getBoardPointFromClient, handleUndo, items, processAndAddImage, saveToHistory, selectedIds]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -1400,12 +1432,11 @@ export default function KJAnalysisBoard() {
     }
 
     if (type === 'board') {
-        const rect = contentRef.current.getBoundingClientRect();
-        const startX = e.clientX - rect.left;
-        const startY = e.clientY - rect.top;
+        const startPoint = getBoardPointFromClient(e.clientX, e.clientY);
+        if (!startPoint) return;
         setSelectedIds(new Set());
         setIsLassoing(true);
-        setLassoPoints([{x: startX, y: startY}]);
+        setLassoPoints([startPoint]);
         return;
     }
     
@@ -1463,11 +1494,9 @@ export default function KJAnalysisBoard() {
     mousePosRef.current = { x: e.clientX, y: e.clientY };
 
     if (isLassoing) {
-        if (!contentRef.current) return;
-        const rect = contentRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        setLassoPoints(prev => [...prev, {x, y}]);
+        const point = getBoardPointFromClient(e.clientX, e.clientY);
+        if (!point) return;
+        setLassoPoints(prev => [...prev, point]);
         return;
     }
 
@@ -1478,8 +1507,8 @@ export default function KJAnalysisBoard() {
     }
 
     if (dragState.type === 'resize') {
-        const dx = e.clientX - dragState.startX;
-        const dy = e.clientY - dragState.startY;
+        const dx = (e.clientX - dragState.startX) / boardZoom;
+        const dy = (e.clientY - dragState.startY) / boardZoom;
         const newW = Math.max(50, dragState.initItemX + dx);
         const newH = Math.max(50, dragState.initItemY + dy);
         setItems(prev => prev.map(i => i.id === dragState.id ? { ...i, width: newW, height: newH } : i));
@@ -1487,8 +1516,8 @@ export default function KJAnalysisBoard() {
     }
 
     if (dragState.type === 'connectionHandle') {
-        const dx = e.clientX - dragState.startX;
-        const dy = e.clientY - dragState.startY;
+        const dx = (e.clientX - dragState.startX) / boardZoom;
+        const dy = (e.clientY - dragState.startY) / boardZoom;
         const newOffsetX = dragState.initOffset.x + dx * 2;
         const newOffsetY = dragState.initOffset.y + dy * 2;
         setConnections(prev => prev.map(c => c.id === dragState.id ? { ...c, controlOffset: { x: newOffsetX, y: newOffsetY } } : c));
@@ -1496,14 +1525,17 @@ export default function KJAnalysisBoard() {
     }
 
     if (dragState.isConnecting) {
-        if (!contentRef.current) return;
-        const rect = contentRef.current.getBoundingClientRect();
-        setDragState(prev => ({ ...prev, currMouseX: e.clientX - rect.left, currMouseY: e.clientY - rect.top }));
+        const point = getBoardPointFromClient(e.clientX, e.clientY);
+        if (!point) return;
+        setDragState(prev => ({ ...prev, currMouseX: point.x, currMouseY: point.y }));
         return;
     }
     if (!dragState.isDragging) return;
-    const dx = e.clientX - dragState.startX; const dy = e.clientY - dragState.startY;
-    if (longPressTimerRef.current && Math.hypot(dx, dy) > 5) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+    const screenDx = e.clientX - dragState.startX;
+    const screenDy = e.clientY - dragState.startY;
+    const dx = screenDx / boardZoom;
+    const dy = screenDy / boardZoom;
+    if (longPressTimerRef.current && Math.hypot(screenDx, screenDy) > 5) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
     
     if (dragState.type === 'note') {
       if (selectedIds.size > 1 && selectedIds.has(dragState.id)) {
@@ -1523,11 +1555,11 @@ export default function KJAnalysisBoard() {
       const draggedItem = items.find(i => i.id === dragState.id);
       if (!draggedItem) return;
       if (draggedItem.groupId) {
-          setItems(prev => prev.map(item => item.groupId === draggedItem.groupId ? { ...item, x: item.x + e.movementX, y: item.y + e.movementY } : item));
+          setItems(prev => prev.map(item => item.groupId === draggedItem.groupId ? { ...item, x: item.x + e.movementX / boardZoom, y: item.y + e.movementY / boardZoom } : item));
       } else {
           setItems(prev => prev.map(item => item.id === dragState.id ? { ...item, x: dragState.initItemX + dx, y: dragState.initItemY + dy } : item));
       }
-      const currentX = draggedItem.x + (draggedItem.groupId ? e.movementX : 0); const currentY = draggedItem.y + (draggedItem.groupId ? e.movementY : 0);
+      const currentX = draggedItem.x + (draggedItem.groupId ? e.movementX / boardZoom : 0); const currentY = draggedItem.y + (draggedItem.groupId ? e.movementY / boardZoom : 0);
       const center = getCenter({ ...draggedItem, x: currentX, y: currentY });
       const candidate = items.find(i => {
           if (i.id === dragState.id || (draggedItem.groupId && i.groupId === draggedItem.groupId)) return false; 
@@ -1570,15 +1602,14 @@ export default function KJAnalysisBoard() {
 
     if (dragState.isConnecting) {
         if (contentRef.current) {
-            const rect = contentRef.current.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
+            const boardPoint = getBoardPointFromClient(e.clientX, e.clientY);
+            if (!boardPoint) return;
             
             // Revert to distance-based check (center point distance)
             const target = items.find(i => {
               if (i.id === dragState.startConnId) return false;
               const center = getCenter(i);
-              return Math.hypot(center.x - mouseX, center.y - mouseY) < 70; // 70px snap radius
+              return Math.hypot(center.x - boardPoint.x, center.y - boardPoint.y) < 70; // 70px snap radius
             });
             if (target) { 
                saveToHistory(items, connections); 
@@ -1631,10 +1662,9 @@ export default function KJAnalysisBoard() {
   const handleBoardDoubleClick = (e) => {
       // Only handle if clicking directly on the board background
       if (e.target === e.currentTarget) {
-          const rect = contentRef.current.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const y = e.clientY - rect.top;
-          handleAddNote(x, y); 
+          const point = getBoardPointFromClient(e.clientX, e.clientY);
+          if (!point) return;
+          handleAddNote(point.x, point.y); 
       }
   };
 
@@ -1737,9 +1767,35 @@ export default function KJAnalysisBoard() {
         </div>
       )}
 
+      <div className="absolute bottom-8 right-8 z-[1000] flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/85 px-2 py-1.5 shadow-xl backdrop-blur-md no-export select-none">
+        <button
+          onClick={() => updateBoardZoom(current => current - BOARD_ZOOM_STEP)}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={boardZoom <= MIN_BOARD_ZOOM}
+          title="Zoom out"
+        >
+          <ZoomOut size={18} />
+        </button>
+        <button
+          onClick={() => updateBoardZoom(1)}
+          className="h-9 min-w-14 rounded-full px-2 text-xs font-bold tabular-nums text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-600"
+          title="Reset zoom"
+        >
+          {Math.round(boardZoom * 100)}%
+        </button>
+        <button
+          onClick={() => updateBoardZoom(current => current + BOARD_ZOOM_STEP)}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={boardZoom >= MAX_BOARD_ZOOM}
+          title="Zoom in"
+        >
+          <ZoomIn size={18} />
+        </button>
+      </div>
+
       {/* Main Board Area */}
       <main
-        className="h-full w-full relative overflow-auto bg-stone-100 select-none"
+        className="board-scrollbar h-full w-full relative overflow-auto bg-stone-100 select-none"
         ref={boardRef}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -1751,11 +1807,25 @@ export default function KJAnalysisBoard() {
         {isImageDragOver && (
           <div className="absolute inset-4 z-[900] pointer-events-none rounded-xl border-2 border-dashed border-blue-400 bg-blue-500/5 no-export" />
         )}
+        <div
+          className="relative"
+          style={{
+            width: `${BOARD_WIDTH * boardZoom}px`,
+            height: `${BOARD_HEIGHT * boardZoom}px`
+          }}
+        >
         <div 
             ref={contentRef}
             id="kj-board-canvas"
-            className={`w-[2400px] h-[1600px] relative bg-stone-100 cursor-default`}
-            style={{backgroundImage: 'radial-gradient(#cbd5e1 1.5px, transparent 1.5px)', backgroundSize: '24px 24px'}}
+            className="relative bg-stone-100 cursor-default"
+            style={{
+                width: `${BOARD_WIDTH}px`,
+                height: `${BOARD_HEIGHT}px`,
+                backgroundImage: 'radial-gradient(#cbd5e1 1.5px, transparent 1.5px)',
+                backgroundSize: '24px 24px',
+                transform: `scale(${boardZoom})`,
+                transformOrigin: 'top left'
+            }}
             onDoubleClick={handleBoardDoubleClick}
             onMouseDown={(e) => handleMouseDown(e, null, 'board')} 
         >
@@ -1964,6 +2034,7 @@ export default function KJAnalysisBoard() {
                 onImageLayerChange={handleImageLayerChange}
              />
           </div>
+        </div>
       </main>
       
       <style>{`
