@@ -851,7 +851,7 @@ const GroupOutline = ({ outline }) => {
 
   return (
     <svg
-      className="absolute pointer-events-none z-[4] overflow-visible"
+      className="absolute pointer-events-none z-[7] overflow-visible"
       style={{ left: outline.x, top: outline.y, width, height }}
       viewBox={`0 0 ${width} ${height}`}
     >
