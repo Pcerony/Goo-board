@@ -530,6 +530,83 @@ const MemoBackground = ({ item }) => {
     );
 };
 
+const getGroupItemOutlinePoints = (item, padding = GROUP_OUTLINE_PADDING) => {
+    const style = getNoteStyle(item.text, item.type, item.width, item.height);
+    const centerX = item.x + style.widthVal / 2;
+    const centerY = item.y + style.heightVal / 2;
+    const radiusX = style.widthVal / 2 + padding;
+    const radiusY = style.heightVal / 2 + padding;
+    const pointCount = item.type === 'image' ? 8 : 16;
+
+    return Array.from({ length: pointCount }, (_, index) => {
+        const angle = (Math.PI * 2 * index) / pointCount;
+        return {
+            x: centerX + Math.cos(angle) * radiusX,
+            y: centerY + Math.sin(angle) * radiusY
+        };
+    });
+};
+
+const getConvexHull = (points) => {
+    const sorted = Array.from(
+        new Map(points.map(point => [`${point.x.toFixed(3)},${point.y.toFixed(3)}`, point])).values()
+    ).sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+
+    if (sorted.length <= 2) return sorted;
+
+    const cross = (origin, a, b) => (
+        (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x)
+    );
+
+    const lower = [];
+    sorted.forEach(point => {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+            lower.pop();
+        }
+        lower.push(point);
+    });
+
+    const upper = [];
+    [...sorted].reverse().forEach(point => {
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+            upper.pop();
+        }
+        upper.push(point);
+    });
+
+    return lower.slice(0, -1).concat(upper.slice(0, -1));
+};
+
+const getSmoothClosedPath = (points) => {
+    if (points.length === 0) return '';
+    if (points.length < 3) {
+        return `M ${points.map(point => `${point.x} ${point.y}`).join(' L ')} Z`;
+    }
+
+    const curveTension = 0.18;
+    const segments = [`M ${points[0].x} ${points[0].y}`];
+
+    for (let index = 0; index < points.length; index += 1) {
+        const prev = points[(index - 1 + points.length) % points.length];
+        const current = points[index];
+        const next = points[(index + 1) % points.length];
+        const afterNext = points[(index + 2) % points.length];
+        const control1 = {
+            x: current.x + (next.x - prev.x) * curveTension,
+            y: current.y + (next.y - prev.y) * curveTension
+        };
+        const control2 = {
+            x: next.x - (afterNext.x - current.x) * curveTension,
+            y: next.y - (afterNext.y - current.y) * curveTension
+        };
+
+        segments.push(`C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${next.x} ${next.y}`);
+    }
+
+    segments.push('Z');
+    return segments.join(' ');
+};
+
 const GooeyLine = ({ id, from, to, fromColor, toColor, offset, label }) => {
     if (!from || !to) return null;
     const gradientId = `grad-${id}`;
@@ -833,21 +910,9 @@ const ImageControlsOverlay = ({ item, onResizeStart, onImageLayerChange }) => {
 };
 
 const GroupOutline = ({ outline }) => {
-  const edge = 8;
   const width = Math.max(1, outline.width);
   const height = Math.max(1, outline.height);
-  const radius = Math.min(96, width * 0.22, height * 0.36);
-  const sway = Math.min(34, width * 0.08, height * 0.14);
-  const path = [
-    `M ${radius + sway} ${edge}`,
-    `C ${width * 0.36} ${edge - sway * 0.45}, ${width * 0.64} ${edge + sway * 0.2}, ${width - radius} ${edge + sway * 0.8}`,
-    `C ${width - edge + sway * 0.15} ${height * 0.22}, ${width - edge + sway * 0.2} ${height * 0.52}, ${width - edge - sway * 0.2} ${height * 0.68}`,
-    `C ${width - edge - sway * 0.35} ${height * 0.88}, ${width * 0.72} ${height - edge + sway * 0.5}, ${width * 0.54} ${height - edge}`,
-    `C ${width * 0.32} ${height - edge + sway * 0.35}, ${radius * 0.8} ${height - edge - sway * 0.2}, ${edge + sway * 0.35} ${height * 0.68}`,
-    `C ${edge - sway * 0.55} ${height * 0.48}, ${edge + sway * 0.05} ${height * 0.24}, ${edge + radius * 0.48} ${edge + sway * 1.25}`,
-    `C ${edge + radius * 0.9} ${edge + sway * 0.4}, ${radius * 0.7} ${edge + sway * 0.1}, ${radius + sway} ${edge}`,
-    'Z'
-  ].join(' ');
+  const path = outline.path;
 
   return (
     <svg
@@ -1486,23 +1551,29 @@ export default function KJAnalysisBoard() {
       return Array.from(grouped.entries()).flatMap(([groupId, groupItems]) => {
           if (groupItems.length < 2) return [];
 
-          const bounds = groupItems.reduce((current, item) => {
-              const style = getNoteStyle(item.text, item.type, item.width, item.height);
-              return {
-                  minX: Math.min(current.minX, item.x),
-                  minY: Math.min(current.minY, item.y),
-                  maxX: Math.max(current.maxX, item.x + style.widthVal),
-                  maxY: Math.max(current.maxY, item.y + style.heightVal)
-              };
-          }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+          const hull = getConvexHull(groupItems.flatMap(item => getGroupItemOutlinePoints(item)));
+          if (hull.length < 3) return [];
+
+          const bounds = hull.reduce((current, point) => ({
+              minX: Math.min(current.minX, point.x),
+              minY: Math.min(current.minY, point.y),
+              maxX: Math.max(current.maxX, point.x),
+              maxY: Math.max(current.maxY, point.y)
+          }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+          const strokeBleed = 14;
+          const localHull = hull.map(point => ({
+              x: point.x - bounds.minX + strokeBleed,
+              y: point.y - bounds.minY + strokeBleed
+          }));
 
           return [{
               id: groupId,
               name: groupItems.find(item => item.groupName)?.groupName || '',
-              x: bounds.minX - GROUP_OUTLINE_PADDING,
-              y: bounds.minY - GROUP_OUTLINE_PADDING,
-              width: bounds.maxX - bounds.minX + GROUP_OUTLINE_PADDING * 2,
-              height: bounds.maxY - bounds.minY + GROUP_OUTLINE_PADDING * 2
+              x: bounds.minX - strokeBleed,
+              y: bounds.minY - strokeBleed,
+              width: bounds.maxX - bounds.minX + strokeBleed * 2,
+              height: bounds.maxY - bounds.minY + strokeBleed * 2,
+              path: getSmoothClosedPath(localHull)
           }];
       });
   };
